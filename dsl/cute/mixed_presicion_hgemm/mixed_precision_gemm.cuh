@@ -97,9 +97,9 @@ struct KernelSpec{
 
     static_assert(!std::is_same_v<MMA_op, void>, "Unsupported MMA op!");
 
-    using TileMMA = decltype(make_tiled_mma(MMA_op{}));
+    using TiledMMA = decltype(make_tiled_mma(MMA_op{}));
 
-    static constexpr int kThreadNum = size(TileMMA{});
+    static constexpr int kThreadNum = size(TiledMMA{});
     static constexpr int kShmSize = 0;
 };
 
