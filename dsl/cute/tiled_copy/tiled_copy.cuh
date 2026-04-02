@@ -102,31 +102,30 @@ __global__ void tiled_copy(void *Cptr, const void *Aptr, const void *Bptr, int m
     TiledMMA tiled_mma;
     ThrMMA thr_mma = tiled_mma.get_slice(tid);
 
-    /* A*/
     Tensor tCgA = thr_mma.partition_A(gA); // (MMA, MMA_M, MMA_K)
-    Tensor tCrA = thr_mma.partition_fragment_A(gA); // (MMA, MMA_M, MMA_K)
+    Tensor tCgB = thr_mma.partition_B(gB);
+    Tensor tCgC = thr_mma.partition_C(gC);
 
+    Tensor tCrA = thr_mma.partition_fragment_A(gA); // (MMA, MMA_M, MMA_K)
+    Tensor tCrB = thr_mma.partition_fragment_B(gB);
+    Tensor tCrC = thr_mma.partition_fragment_C(gC);
+
+
+    /* A*/
     TiledCopyA g2r_tiled_copy_a;
     ThrCopy g2r_thr_cpy_a = g2r_tiled_copy_a.get_slice(tid);
     Tensor tAgA = g2r_thr_cpy_a.retile_S(tCgA);  // (CPY, CPY_M, CPY_K)
     // Tensor tAgA = g2r_thr_cpy_a.partition_S(gA);
     Tensor tArA = g2r_thr_cpy_a.retile_D(tCrA);
 
-
     /* B*/
-    Tensor tCgB = thr_mma.partition_B(gB);
-    Tensor tCrB = thr_mma.partition_fragment_B(gB);
-
     TiledCopyB g2r_tiled_copy_b;
     ThrCopy g2r_thr_cpy_b = g2r_tiled_copy_b.get_slice(tid);
     Tensor tBgB = g2r_thr_cpy_b.retile_S(tCgB);  // (CPY, CPY_N, CPY_K)
     // Tensor tBgB = g2r_thr_cpy_b.partition_S(gB);
     Tensor tBrB = g2r_thr_cpy_b.retile_D(tCrB);
 
-    /* C*/
-    Tensor tCgC = thr_mma.partition_C(gC);
-    Tensor tCrC = thr_mma.partition_fragment_C(gC);
-
+   
     copy(g2r_tiled_copy_a, tAgA, tArA);
     copy(g2r_tiled_copy_b, tBgB, tBrB);
 
