@@ -111,3 +111,193 @@ namespace spec{
     };
 }
 
+template<typename Spec, bool IsGemm, bool IsCvtPrecision>
+__global__ void block_copy(void *__restrict__ Cptr, const void *__restrict__ Aptr, const void *__restrict__ Bptr, int m, int n, int k, void *__restrict__ Outptr) {
+
+    using namespace cute;
+
+    using X = Underscore;
+    using MMA_shape = typename Spec::MMA_shape;
+    using OutType = typename Spec::OutType;
+    using ComputeTypeA = typename Spec::ComputeTypeA;
+    using ComputeTypeB = typename Spec::ComputeTypeB;
+    using ComputeTypeC = typename Spec::ComputeTypeC;
+    using SmemLayoutA = typename Spec::SmemLayoutA;
+    using SmemLayoutB = typename Spec::SmemLayoutB;
+    using SmemLayoutC = typename Spec::SmemLayoutC;
+    using SmemLayoutO = typename Spec::SmemLayoutO;
+
+    constexpr int kBlockM = Spec::kBlockM;
+    constexpr int kBlockN = Spec::kBlockN;
+    constexpr int kBlockK = Spec::kBlockK;
+    constexpr int kShmSizeA = Spec::kShmSizeA;
+    constexpr int kShmSizeB = Spec::kShmSizeB;
+
+    extern __shared__ __align__(1024) uint8_t smem[];
+
+    uint8_t *Aptr_smem = smem;
+    uint8_t *Bptr_smem = smem + kShmSizeA;
+    uint8_t *Cptr_smem = smem + kShmSizeA + kShmSizeB;
+    uint8_t *Optr_smem = smem;
+
+    int tid = threadIdx.x;
+
+    Tensor mA = make_tensor(make_gmem_ptr((ComputeTypeA*)Aptr), make_shape(m, k), make_stride(k, Int<1>{}));        
+    Tensor mB = make_tensor(make_gmem_ptr((ComputeTypeB*)Bptr), make_shape(n, k), make_stride(k, Int<1>{}));
+    Tensor mC = make_tensor(make_gmem_ptr((ComputeTypeC*)Cptr), make_shape(m, n), make_stride(n, Int<1>{}));
+    Tensor m0 = make_tensor(make_gmem_ptr((ComputeTypeC*)Outptr), make_shape(m, n), make_stride(n, Int<1>{}));
+
+    auto tiler = make_tile(Int<kBlockM>{}, Int<kBlockN>{}, Int<kBlockK>{});
+    auto coord = make_coord(0, 0, 0);  
+
+    Tensor gA = local_tile(mA, tiler, coord, Step<_1, X, _1>{});
+    Tensor gB = local_tile(mB, tiler, coord, Step<X, _1, _1>{}); 
+    Tensor gC = local_tile(mC, tiler, coord, Step<_1, _1, X>{});
+    Tensor g0 = local_tile(m0, tiler, coord, Step<_1, _1, X>{});
+
+    Tensor sA = make_tensor(make_smem_ptr((ComputeTypeA*)Aptr_smem), SmemLayoutA{});
+    Tensor sB = make_tensor(make_smem_ptr((ComputeTypeB*)Bptr_smem), SmemLayoutB{});
+    Tensor sC = make_tensor(make_smem_ptr((ComputeTypeC*)Cptr_smem), SmemLayoutC{});
+    Tensor s0 = make_tensor(make_smem_ptr((OutType*)Optr_smem), SmemLayoutO{});
+
+    typename Spec::TiledMMA tiled_mma;
+    ThrMMA thr_mma = tiled_mma.get_slice(tid);
+
+    Tensor tCgA = thr_mma.partition_A(gA);  // (MMA, MMA_M, MMA_K)
+    Tensor tCgB = thr_mma.partition_B(gB);
+    Tensor tCgC = thr_mma.partition_C(gC);
+
+    Tensor tCrA = thr_mma.partition_fragment_A(gA); // (MMA, MMA_M, MMA_K)
+    Tensor tCrB = thr_mma.partition_fragment_B(gB);
+    Tensor tCrC = thr_mma.partition_fragment_C(gC);
+
+    //--- Copy all global matrix Tile A/B/C to SMEM
+    typename Spec::TiledCopyA_G2S g2s_tiled_copy_a;
+    ThrCopy g2s_thr_copy_a = g2s_tiled_copy_a.get_slice(tid);
+    Tensor tAgA_g2s = g2s_thr_copy_a.partition_S(gA); // (CPY, CPY_M, CPY_K)
+    Tensor tAsA_g2s = g2s_thr_copy_a.partition_D(sA);
+
+    typename Spec::TiledCopyB_G2S g2s_tiled_copy_b;
+    ThrCopy g2s_thr_copy_b = g2s_tiled_copy_b.get_slice(tid);
+    Tensor tBgB_g2s = g2s_thr_copy_b.partition_S(gB); // (CPY, CPY_N, CPY_K)
+    Tensor tBsB_g2s = g2s_thr_copy_b.partition_D(sB);
+
+
+    typename Spec::TiledCopyC_G2S g2s_tiled_copy_c;
+    ThrCopy g2s_thr_copy_c = g2s_tiled_copy_c.get_slice(tid);
+    Tensor tCgC_g2s = g2s_thr_copy_c.partition_S(gC); // (CPY, CPY_M, CPY_N)
+    Tensor tCsC_g2s = g2s_thr_copy_c.partition_D(sC);
+
+    copy(g2s_tiled_copy_a, tAgA_g2s, tAsA_g2s);
+    copy(g2s_tiled_copy_b, tBgB_g2s, tBsB_g2s);
+    if constexpr (!IsGemm) {
+        copy(g2s_tiled_copy_c, tCgC_g2s, tCsC_g2s);
+    }
+
+    #if defined(CP_ASYNC_ENABLED)
+        cp_async_fence();
+        cp_async_wait<0>();
+    #endif
+    __syncthreads();
+    //--- Complete copy from GMEM to SMEM
+
+    typename Spec::TiledCopyA_S2R s2r_tiled_copy_a;
+    ThrCopy s2r_thr_copy_a = s2r_tiled_copy_a.get_slice(tid);
+    Tensor tAsA_s2r = s2r_thr_copy_a.partition_S(sA);
+    Tensor tArA_s2r = s2r_thr_copy_a.partition_D(tCrA);
+
+    typename Spec::TiledCopyB_S2R s2r_tiled_copy_b;
+    ThrCopy s2r_thr_copy_b = s2r_tiled_copy_b.get_slice(tid);
+    Tensor tBsB_s2r = s2r_thr_copy_b.partition_S(sB);
+    Tensor tBrB_s2r = s2r_thr_copy_b.partition_D(tCrB);
+
+
+    typename Spec::TiledCopyC_S2R s2r_tiled_copy_c;
+    ThrCopy s2r_thr_copy_c = s2r_tiled_copy_c.get_slice(tid);
+    Tensor tCsC_s2r = s2r_thr_copy_c.partition_S(sC);
+    Tensor tCrC_s2r = s2r_thr_copy_c.partition_D(tCrC);
+
+    if constexpr (!IsGemm) {
+        clear(tCrC);
+    }else {
+        copy(s2r_tiled_copy_c, tCsC_s2r, tCrC_s2r);
+    }
+
+    #if 1
+        copy(s2r_tiled_copy_a, tAsA_s2r, tArA_s2r);
+        copy(s2r_tiled_copy_b, tBsB_s2r, tBrB_s2r);
+
+        gemm(tiled_mma, tCrC, tCrA, tCrB, tCrC);
+    #else
+        constexpr int kMmaValExpandM = Spec::kMmaValExpandM;
+        constexpr int kMmaValExpandN = Spec::kMmaValExpandN;
+        constexpr int kMmaValExpandK = Spec::kMmaValExpandK;
+
+        constexpr int kMmaTileM = Spec::kMmaTileM;
+        constexpr int kMmaTileN = Spec::kMmaTileN;
+        constexpr int kMmaTileK = Spec::kMmaTileK;
+
+        constexpr int NTilesM = kBlockM / kMmaTileM; // 4
+        constexpr int NTilesN = kBlockN / kMmatileN; // 4
+        constexpr int NTilesK = kBlockK / kMmaTileK; // 2
+
+    #pragma unroll
+        for(int m_tile = 0; m_tile < NTilesM; ++m_tile) {
+    #pragma unroll
+            for(int n_tile = 0; n_tile < NTilesN; ++n_tile) {
+    #pragma unroll
+                for(int k_tile = 0; k_tile < NTilesK; ++k_tile) {
+    #pragma unroll
+                copy(s2r_tiled_copy_a, tAsA_s2r(_, m_tile, k_tile), tArA_s2r(_, m_tile, k_tile));
+                copy(s2r_tiled_copy_b, tBsB_s2r(_, n_tile, k_tile), tBrB_s2r(_, n_tile, k_tile));
+    #pragma unroll
+                    for(int im = m_tile * kMmaValExpandM; im < (m_tile + 1) * kMmaValExpandM; ++im) {
+    #pragma unroll
+                        for(int in = n_tile * kMmaValExpandN; in < (n_tile + 1) * kMmaValExpandN; ++in) {
+    #pragma unroll 
+                            for(int ik = k_tile * kMmaValExpandK; ik < (k_tile + 1) * kMmaValExpandK; ++ik) {
+                                gemm(tiled_mma, tCrC(_, im, in), tCrA(_, im, ik), tCrB(_, in, ik), tCrC(_, im, in));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    #endif
+    __syncthreads();
+
+    if constexpr (!IsCvtPrecision) {
+        typename Spec::TiledCopyC_R2S r2s_tiled_copy_c;
+        ThrCopy r2s_thr_copy_c = r2s_tiled_copy_c.get_slice(tid);
+        Tensor tCrC_r2s = r2s_thr_copy_c.retile_S(tCrC);
+        Tensor tCsC_r2s = r2s_thr_copy_c.partition_D(sC);
+        copy(r2s_tiled_copy_c, tCrC_r2s, tCsC_r2s);
+
+        __syncthreads();
+
+        typename Spec::TiledCopyC_S2G s2g_tiled_copy_c;
+        Tensor s2g_thr_copy_c = s2g_tiled_copy_c.get_slice(tid);
+        Tensor tCsC_s2g = s2g_thr_copy_c.partition_S(sC);
+        Tensor tCgC_s2g = s2g_thr_copy_c.partition_D(gC);
+        copy(s2g_tiled_copy_c, tCsC_s2g, tCgC_s2g);
+    }else {
+
+        auto t = make_tensor_like<OutType>(tCrC);
+        copy(tCrC, t); // Convert precision
+
+        typename Spec::TiledCopyO_R2S r2s_tiled_copy_o;
+        ThrCopy r2s_thr_copy_o = r2s_tiled_copy_o.get_slice(tid);
+        Tensor tOrC_r2s = r2s_thr_copy_o.retile_S(t);     // (CPY, CPY_M, CPY_N)
+        Tensor tOsO_r2s = r2s_thr_copy_o.partition_D(s0); // (CPY, CPY_M, CPY_N)
+        copy(r2s_tiled_copy_o, tOrC_r2s, tOsO_r2s);
+
+        __syncthreads();
+
+        typename Spec::TiledCopyO_S2G s2g_tiled_copy_o;
+        ThrCopy s2g_thr_copy_o = s2g_tiled_copy_o.get_slice(tid);
+        Tensor tOsO_s2g = s2g_thr_copy_o.partition_S(s0); // (CPY, CPY_M, CPY_N)
+        Tensor tOgO_s2g = s2g_thr_copy_o.partition_D(g0); // (CPY, CPY_M, CPY_N)
+        copy(s2g_tiled_copy_o, tOsO_s2g, tOgO_s2g);
+    }
+}
