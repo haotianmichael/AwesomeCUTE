@@ -21,8 +21,6 @@
 * 总计算量
     * 2*M*N*K FLOP    
 
-![sgemm](../../docs/sgemm.png)
-
 ## Naive: 全局显存
 > 在一个thread block内部256个线程同时处理256个结果cell. 每个cell需要一个线程读取A[i][0~K-1]和B[0~K-1][j]共2K次，再写入C[i][j]中.
 * 线程数目: M*N

@@ -1,0 +1,57 @@
+\documentclass{article}
+
+% Language setting
+% Set page size and margins
+% Replace `letterpaper' with `a4paper' for UK/EU standard size
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+% Useful packages
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage[UTF8]{ctex} 
+\usepackage{xcolor}
+
+
+\title{CUTE白皮书v1}
+\author{xmm0}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+针对现代高性能计算与深度学习设计的并行硬件架构越来越多地集成了专门的tensor指令，包括用于矩阵乘法的Tensor core以及针对多维数据的硬件优化copy操作。这些指令一般规定了固定的数据layouts，且layouts必须贯穿整个执行过程以确保正确性和最优性能。本文提出 CUTE，一种用于表示和操作tensor的新型数学规范。CUTE 引入了两项关键创新：\textcolor{red}{\textbf{(1)}} 一种分层的layout representation，直接扩展了传统的flat-shape和flat-stride的tensor表示 ，能够描述现代硬件指令所需的复杂映射；\textcolor{red}{\textbf{(2)}} 一套丰富的algebra of layout operations——包括concatenation、coalescence、composition、complementation、division、tiling和inversion——支持复杂的layout操作、推导、验证和静态分析。CUTE Layout为 GPU  kernel中的数据布局和线程排布管理提供了统一的框架，而其layout algebra则支持对layout属性进行强大的\textcolor{blue}{编译时}推理，并能够表达通用的tensor变换。
+本文证明，与传统方法相比，CUTE 的抽象能力显著提升了软件开发效率，促进了architecturally prescribed layouts即从NV硬件架构角度引入的layout的编译时验证，便于实现可泛化的algorithmic primitives即算法原语比如TiledCopy等，并能简洁地表达现代tensor指令所需的tilling与partitionint模式。
+CUTE 已成功部署于生产系统，构成了 NVIDIA CUTLASS 库以及包括 CuTe DSL 在内的多项相关工作的基础。
+\end{abstract}
+
+\section{Introduction and Motivation}
+现代GPU架构设计越来越多地为以tensor计算为中心进行优化，这得益于深度学习和科学计算的需求。NVIDIA的Volta架构引入了Tensor Cores，并引入wmmaAPI在硬件中直接高效执行GEMM。在Turing和Ampere架构中引入cp.async和mma指令，增加其用于在 GPU 内存层次结构内进行结构化矩阵移动能力。Hopper和Blackwell架构进一步引入TMA指令，用于在全局内存和共享内存之间高效传输rank-5 tensor，进一步扩展了Tensor Cores的能力。\textcolor{blue}{充分利用这些面向tensor的硬件特性对于实现GPU的峰值性能至关重要，这也促生出能够高效表示和操作这些tensor的高性能编程模型。}  
+
+现代并行硬件的设计关键在于\textcolor{blue}{多维数据如何在多个层次的内存空间和多个层次的并行度描述中进行存储和访问}。早期架构设计中，数据的存储布局仅影响了硬件访存的方式和时机，从而进一步影响性能。但随着硬件指令的操作粒度变得更大如TMA，指令操作对数据结构的输入和输出规定了固定layout，因此layout对正确性的影响也变得至关重要。数据的layout必须贯穿整个执行流水线，以确保硬件指令的正确调用和内存访问模式的优化。
+
+在本文中，我们介绍 CUTE 的基础概念。CUTE 是 cuda tensor的一种规范，旨在为编写高性能的线性代数库提供Builing Blocks。CUTE 的核心引入了两项关键创新：
+\begin{itemize}
+  \item 全新的tensor layout representation：CUTE 的shapes、layouts和tensors本质上是分层的，可以通过进一步的嵌套来构建。这种层次性提供了表示现代tensor指令所需的复杂映射的能力，但仍然兼容了现有库（如 BLAS、torch.tensor、numpy.ndarray 和MATLAB）中flat-shape和flat-stride表示的严格扩展
+  \item 定义在tensor layout上的algebra of operations：CUTE layout支持丰富的操作集合，包括concatenation, coalescence,composition,complementation,division,tiling和inversion，所有这些操作都会产生新的 layout。这些操作能够实现对现代tensor指令所要求的tensor layout进行复杂的分区(源于其分层特性，即可以划分sub-layouts)、操作(各种变换)、验证(编译期)和推导(编译期)。
+\end{itemize}
+在编写通用高性能算子的时候，CUTE 的layout representation为管理线程和数据提供了直观的框架级别支持；而CUTE 的algebra of operations则可以高效操作layout并生成新layout，总结起来： 
+
+\begin{itemize}
+    \item 支持complex layouts and partitions：CUTE 可表示特定应用的数据模式所需的复杂layout，以及专用tensor指令所需的复杂partitioning patterns 
+    \item 关注点分离：data layout独立于算法逻辑声明，提升了清晰性和模块性
+    \item 静态分析与优化：algebra of layout使得能够根据架构约束对tensor参数进行检查、重排序和分区
+\end{itemize}
+
+\subsection{Related Work}
+
+
+\section{Layout Representation}
+
+\subsection{Layout Algebra}
+
+
+\bibliographystyle{alpha}
+\bibliography{sample}
+
+\end{document}
