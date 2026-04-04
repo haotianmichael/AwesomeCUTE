@@ -11,10 +11,33 @@
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \usepackage[UTF8]{ctex} 
 \usepackage{xcolor}
+\usepackage{amsfonts}  % 或 amssymb
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    columns=flexible,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!40!black},
+    stringstyle=\color{red},
+    showstringspaces=false,
+    language=Python,
+}
+\lstnewenvironment{pythonrepl}
+    {\lstset{
+        basicstyle=\ttfamily\small,
+        language=,
+        moredelim=**[is][\color{blue}]{>>>}{},
+        moredelim=**[is][\color{blue}]{...}{},
+        literate={>>>}{>>>}3{...}{...}3,
+    }}
+    {}
 
 
 \title{CUTE白皮书v1}
-\author{xmm0}
+\author{xmm0@ucas}
 
 \begin{document}
 \maketitle
@@ -32,7 +55,7 @@ CUTE 已成功部署于生产系统，构成了 NVIDIA CUTLASS 库以及包括 C
 
 在本文中，我们介绍 CUTE 的基础概念。CUTE 是 cuda tensor的一种规范，旨在为编写高性能的线性代数库提供Builing Blocks。CUTE 的核心引入了两项关键创新：
 \begin{itemize}
-  \item 全新的tensor layout representation：CUTE 的shapes、layouts和tensors本质上是分层的，可以通过进一步的嵌套来构建。这种层次性提供了表示现代tensor指令所需的复杂映射的能力，但仍然兼容了现有库（如 BLAS、torch.tensor、numpy.ndarray 和MATLAB）中flat-shape和flat-stride表示的严格扩展
+  \item 全新的tensor layout representation：CUTE 的shapes、layouts和tensors本质上是分层的，可以通过进一步的嵌套来构建。这种层次性提供了表示现代tensor指令所需的复杂映射的能力，但仍然兼容了现有库（如 BLAS、torch.tensor、numpy.ndarray 和MATLAB）中flat-shape和flat-stride表示的严格扩展(即stride根据row-major自行推断)
   \item 定义在tensor layout上的algebra of operations：CUTE layout支持丰富的操作集合，包括concatenation, coalescence,composition,complementation,division,tiling和inversion，所有这些操作都会产生新的 layout。这些操作能够实现对现代tensor指令所要求的tensor layout进行复杂的分区(源于其分层特性，即可以划分sub-layouts)、操作(各种变换)、验证(编译期)和推导(编译期)。
 \end{itemize}
 在编写通用高性能算子的时候，CUTE 的layout representation为管理线程和数据提供了直观的框架级别支持；而CUTE 的algebra of operations则可以高效操作layout并生成新layout，总结起来： 
@@ -44,6 +67,119 @@ CUTE 已成功部署于生产系统，构成了 NVIDIA CUTLASS 库以及包括 C
 \end{itemize}
 
 \subsection{Related Work}
+
+CUTE 的提出源于支持高阶tensor contraction(即对高阶tensor中两个指定维度的元素进行乘积累加来降低tensor维度)的需求，而tensor contraction正是许多科学计算和机器学习应用的核心。传统方法依赖于矩阵化（matricization），即通过逻辑或显式地重排tensor数据，以便通过一系列对Basic Linear Algebra Subprograms library（BLAS）的调用来执行计算。
+
+BLAS提供了核心线性代数运算的高效且可移植的实现，针对多种架构都有高度优化的版本。在BLAS原语中，通用矩阵乘法（GEMM）无疑是整个科学计算和机器学习领域优化程度最高、使用最广泛的操作。The BLAS-like Library Instantiation Software（BLIS）通过同时支持行列方向上的非连续存储布局(stride不等于1)从而扩展了GEMM，解决了在处理不规则内存布局时无需显式内存拷贝的问题——但仍局限在单个GEMM计算。而BLAS 的 strided-batched GEMM 扩展进一步泛化了该原语，使其能够应用于批次的tensor contraction。当我们进一步抽象tensor layout，\textcolor{blue}{CUTE带来的进一步insight是：通过层次化的shape:stride；使得多索引（multi-indices）能够自然映射到内存布局，并通过layout algebra自动将任意tensor缩并拆解成一批矩阵乘法，每个矩阵的存储可以是分块的、非连续的——这正是传统flat-stride 无法直接表达的。}
+
+许多现成的库都依赖flat-shape和flat-stride的tensor表示，在Python中就包括numpy.ndarray和torch.tensor:
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\small]
+>>> import numpy
+>>> a = numpy.ndarray([3,7,5])
+>>> a.dtype
+dtype('float64')
+>>> a.shape
+(3, 7, 5)
+>>> a.strides
+(280, 40, 8)
+
+>>> import torch
+>>> a = torch.empty(3,7,5)
+>>> a.dtype
+torch.float32
+>>> a.shape
+torch.Size([3, 7, 5])
+>>> a.stride()
+(35, 5, 1)
+\end{lstlisting}
+在C++中，std::mdspan
+\begin{lstlisting}[language=C++]
+std :: mdspan a = std :: mdspan ( data , 3 , 7 , 5);
+a . extent (0); // 3
+a . extent (1); // 7
+a . extent (2); // 5
+a . stride (0); // 35
+a . stride (1); // 5
+a . stride (2); // 1
+\end{lstlisting}
+CUTE支持所有上述这些表示，并在此基础上进行了严格扩展，将其推广到层次化的shape和stride，从而能够表示更复杂的layout及其codomain。
+
+稠密tensor表示相关的工作包括：HeLayers、ThunderKittens以及OpenAI Triton编译器中使用的Linear Layouts方法。ThunderKittens为寄存器、共享内存、行主序/列主序分块、以及行主序/列主序分块内嵌套行主序/列主序子分块，以及 warp和线程的规定访问模式，实现了一系列特定的类型。这些类型在实现时考虑了架构的layout要求和内存层次结构，但其表示范围仅限于已有的类型和模式。Linear Layouts基于$\mathbb{F}_2$线性代数，提供了一种更通用的tensor layout表示，也为layout分析和推导生成提供了途径。然而Linear Layouts严格依赖于$\mathbb{F}_2$的运算，这使得其中一些操作难以直观理解，并且将其适用范围限制在大小为2的幂次的shape和stride上，这对于许多应用来说是不可接受的。
+
+启发CUTE的其他layout分析方法也依赖于$\mathbb{F}_2$线性代数，例如Edelman、Cormen以及Bouverot等人的工作。这些工作为分析和算法生成提供了基础，但由于其撰写时的应用上下文不同，存在一定的局限性。
+
+由于CUTLASS v3中CUTE的C++实现是开源的并附带部分文档，它已经被一些独立工作所引用和使用，用于分析CUTE Layout和CUTE Algebraic Operations。Bhaskaracharya等人利用ISL在整数线性规划和仿射变换的背景下(多面体编译理论)分析了CUTE和Linear Layouts，但忽略了能够将Linear Layouts表示为 CUTE layout的stride抽象。LEGO使用了受限形式的CUTE layout及compositioin操作在代码生成器中生成复杂的索引。Colfax Research在范畴论的背景下分析了CUTE layout及其上的部分操作。在本文中，我们旨在对CUTE的概念及其应用提供更明确和形式化的处理。
+
+CUTE 的设计和概念已经在多个应用中证明了其实用性。例如CUTE已被用于 Graphene tensor编译器中，在其中起到表示tensor计算的重要作用。此外，CUTE的C++实现已被用于Stream-K算法的实现中，并且是NVIDIA CUTLASS v3库开发的核心。CUTE还成为LLM高性能算子的核心组件，包括FlashAttention及其后续的各代演进版本，这突显了它在深度学习前沿研究和应用中的重要性。CUTE也是一系列相关编译器项目的基础，包括CuTe DSL，这是一个基于Python的DSL，用于线性代数应用算子开发。
+
+
+
+
+\subsection{Canonical Loops and Loop Transformations}
+在高性能线性代数算子的开发中，显式计算循环索引是一个常见的挑战。这些计算对程序员来说难以正确编写，维护起来更是困难重重。\textcolor{blue}{我们倾向于将数据访问与算法逻辑进行解耦，用tensor/vector坐标清晰地编写算法逻辑，并将数据访问模式抽象到数据布局中。}
+
+为了便于说明，我们首先定义本文所提出的技术能够处理的那类循环。具体而言，我们将一个标准循环\textcolor{blue}{canonical loop}定义为：具有单个循环索引，从零开始，以一个常数为上界，并且每次迭代增量为1。考虑如下循环：
+\begin{lstlisting}[language=C++]
+for(int m = 2; m <= 50; m +=3)
+    A[m] = e[m];
+\end{lstlisting}
+该循环将$A[2]、A[5]、A[8]$……设置为$e(m)$的结果。它可以按如下方式转换为canonical loop形式：
+\begin{lstlisting}[language=C++]
+for(int i = 0; i < 17;  ++i)
+    (A + 2)[3*i] = g[i];
+\end{lstlisting}
+这里，指针首先做常量长度的偏移，循环步长被归一化为 1，下界被转换为 0，上界是不包含边界，$e(m)$被转换为$g(i) = e(3i+2)$。现在可以直观地将上述例子理解为：迭代一个逻辑上有 17 个元素的向量，其中逻辑坐标以步长 3 进行索引，数据基地址为$A+2$。程序可以用以下数据表示
+\begin{itemize}
+    \item Accessor: A + 2
+    \item Shape: 17
+    \item Stride:3
+\end{itemize}
+嵌套循环也可以进行相似的处理，考虑下面的二维嵌套循环：
+\begin{lstlisting}[language=C++]
+for(int n = 3; n < 43; n += 2) 
+    for(int m = 4; m <= 22; m += 5)
+        A[p*m + q*n] = e(m, n);
+\end{lstlisting}
+可以被转化成为canonical loop形式：
+\begin{lstlisting}[language=C++]
+for(int j = 0; j < 20; j++)
+    for(int i = 0; i < 4; i ++)
+        (A + 4*p + 3*q)[5*p*i + 2*q*j] = g(i, j);
+\end{lstlisting}
+通过这种规范形式的循环嵌套，很自然地将变换后的循环理解为：遍历一个逻辑上的4×20的tensor，其中逻辑行坐标$i$以步长$5p$进行索引，逻辑列坐标$j$以步长$2q$进行索引，数据基地址为$A+4p+3q$。这可以用以下数据来表示：
+\begin{itemize}
+    \item Accessor: A + 4p + 3q
+    \item Shape: (4, 20)
+    \item Stride: (5p, 2q)
+\end{itemize}
+一个核心的观察就是：这个4x20的tensor也可以被解释为一个80个元素的vector，具有非均匀，半仿射的stride，且可以用等价的canonical loop形式表示：
+\begin{lstlisting}[language=C++]
+for(int k = 0; k < 80; k ++)
+    (A + 4*p + 3*q)[5*p*(k%4) + 2*q*(k/4)] = f(k);
+\end{lstlisting}
+其中\%表示取模运算，\/表示整数向下取整除法。这个变换正是colexicographical bijection:$(i,j) = (k\%4, k/4)$,它将二维坐标与一维坐标一一对应。\textcolor{blue}{这个双射可以直接从shape中推导出来。因此shape表示可以同时接受二维坐标和一维坐标，从而为数据索引提供了一个灵活且与tensor维度无关（rank-agnostic）的框架。}
+
+此外，canonical loop还为在优化tensor计算的编译器中常见的、可证明正确的loop transformations提供了指导。考虑最一般的canonical loop nest：
+\begin{lstlisting}[language=C++]
+for(int i0 = 0; i0 < N0; ++i0)
+    for(int i1 = 0; i1 < N1; ++i1)
+        for(int i2 = 0; i2 < N2; ++i2)
+            ...
+            A[d0*i0 + d1*i1 +d2*i2 +...] = e(i0, i1, i2, ...);
+\end{lstlisting}
+其中$(N_{0}, N_{1}, N_{2}, ...)$是计算的shape，$(d_{0}, d_{1}, d_{2}, ...)$是访问模式的stride:
+\begin{itemize}
+    \item Accessor: A
+    \item Shape: $(N_{0}, N_{1}, N_{2}, ...)$
+    \item Stride: $(d_{0}, d_{1}, d_{2}, ...)$
+\end{itemize}
+由于Shape:Stride信息与canonical loop nest本身之间存在一一对应关系，与其问“如何对循环进行变换——splitting, transposition, concatenation, permutation, truncation, vectorization等”，不如问：“对Shape:Stride表示进行变换的有效方式有哪些？用什么\textbf{算子P}来进行变换？” 实际上，如果$L=Shape:Stride$表示数据访问和循环嵌套，那么存在什么样的函数$P$，使得：
+\[
+L' = P(L) = L \circ P
+\]
+是对$L=Shape:Stride$的一个有意义的变换，从一个具有特定shape和stride的表示，变换到具有潜在新shape和stride的新循环嵌套$L' = \text{Shape}' : \text{Stride}'$? 这些变换$P$本质上重写了循环嵌套，并且如果定义得当，它们本身可以是可组合的、可逆的，并提供对循环的函数式编程风格的控制。结合前面讨论的一维坐标与多维坐标之间的双射关系，本文证明了这些变换\textbf{算子}的一种非常有效的表示就是$P = \text{Shape}^* : \text{Stride}^*$ \textcolor{red}{即循环本身与$Shape:Stride$的Layout是一一对应的，故循环变换就是在做Layout变换，巧妙的是这些变换过程本身也可以是一种$Shape:Stride$的Layout——因此便可以用一套框架来实现统一。}
+
+\subsection{Tensors and Folding}
 
 
 \section{Layout Representation}
