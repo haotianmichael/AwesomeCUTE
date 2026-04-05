@@ -175,16 +175,66 @@ for(int i0 = 0; i0 < N0; ++i0)
 \end{itemize}
 由于Shape:Stride信息与canonical loop nest本身之间存在一一对应关系，与其问“如何对循环进行变换——splitting, transposition, concatenation, permutation, truncation, vectorization等”，不如问：“对Shape:Stride表示进行变换的有效方式有哪些？用什么\textbf{算子P}来进行变换？” 实际上，如果$L=Shape:Stride$表示数据访问和循环嵌套，那么存在什么样的函数$P$，使得：
 \[
-L' = P(L) = L \circ P
+L' = P(L) = L \circ P  \qquad (1)
 \]
-是对$L=Shape:Stride$的一个有意义的变换，从一个具有特定shape和stride的表示，变换到具有潜在新shape和stride的新循环嵌套$L' = \text{Shape}' : \text{Stride}'$? 这些变换$P$本质上重写了循环嵌套，并且如果定义得当，它们本身可以是可组合的、可逆的，并提供对循环的函数式编程风格的控制。结合前面讨论的一维坐标与多维坐标之间的双射关系，本文证明了这些变换\textbf{算子}的一种非常有效的表示就是$P = \text{Shape}^* : \text{Stride}^*$ \textcolor{red}{即循环本身与$Shape:Stride$的Layout是一一对应的，故循环变换就是在做Layout变换，巧妙的是这些变换过程本身也可以是一种$Shape:Stride$的Layout——因此便可以用一套框架来实现统一。}
+是对$L=Shape:Stride$的一个有意义的变换，从一个具有特定shape和stride的表示，变换到具有潜在新shape和stride的新循环嵌套$L' = \text{Shape}' : \text{Stride}'$? 这些变换$P$本质上重写了循环嵌套，并且如果定义得当，它们本身可以是可组合的、可逆的，并提供对循环的函数式编程风格的控制。结合前面讨论的一维坐标与多维坐标之间的双射关系，本文证明了这些变换\textbf{算子}的一种非常有效的表示就是$P = \text{Shape}^* : \text{Stride}^*$ \textcolor{blue}{即循环本身与$Shape:Stride$的Layout是一一对应的，故循环变换就是在做Layout变换，巧妙的是这些变换过程本身也可以是一种$Shape:Stride$的Layout——因此便可以用一套框架来实现统一。}
 
 \subsection{Tensors and Folding}
+为了进一步说明shape既可以用一维坐标索引还可以用多维坐标索引，我们推广了[8]中将tensor contractions映射为类似BLAS的规范原语时所观察到的结果。
 
+在本文中，张量用粗体字母表示，下标用小写字母表示，这些下标的范围用对应的大写字母表示。张量的“秩”-rank指的是它所具有的维度（也称为mode）的数量。例如：
+\begin{itemize}
+    \item A scalar, $\alpha$, is a rank-0 tensor
+    \item A vector, $\mathbf{a}_i$, is a rank-1 tensor with $0 \leq i < I$
+    \item A matrix, $\mathbf{A_{mn}}$ is a rank-2 tensor with $0 \leq m < M$ and $0 \leq n < N$
+    \item A three-way array, $\mathbf{A_{mnp}}$ is a rank-3 tensor with $0 \leq m < M$ and $0 \leq n < N$, and $0 \leq p < P$
+\end{itemize}
+对仅在公式单侧出现的重复指标隐含求和（爱因斯坦记号），因此tensor contractions的一个实例为:
+\[
+\mathbf{C}_{stqp} = \mathbf{A}_{stupr} \mathbf{B}_{qtrw}
+\]
+这表示一个rank-5 tensor与一个rank-4 tensor发生了contraction，产生一个rank-4 tensor。这种形式的contraction可以用例如 numpy.einsum和torch.einsum接口紧凑地表达。上述tensor contraction可以重写为：
+\[
+\mathbf{C}_{(sp)(q)(t)} = \mathbf{A}_{(sp)(ur)(t)} \mathbf{B}_{(q)(ur)(t)}
+\]
+其中原始tensor contraction中的mode被分为四种类型:
+\begin{itemize}
+    \item \textbf{Row mode}, $\hat{m}$: Appear in \textbf{A} and \textbf{C}, and not in \textbf{B}.
+    \item \textbf{Column mode}, $\hat{n}$: Appear in \textbf{B} and \textbf{C}, and not in \textbf{A}.
+    \item \textbf{Reduction modes}, $\hat{k}$ Appear in \textbf{A} and \textbf{B}, and not in \textbf{C}.
+    \item \textbf{Batch modes}, $\hat{\ell}$: Appear in \textbf{A}, \textbf{B} and \textbf{C}.
+\end{itemize}
+这被称为tensor folding。tensor folding不需要任何显式的数据拷贝，而仅仅是改变数据视图——即把复杂的高维tensor运算，通过索引折叠的方式变成GEMM形式，即可以使用BLAS来实现加速。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/fig1.png}
+    \label{fig:example}
+\end{figure}
+作为一个显式的tensor folding的例子，考虑图1第一行所示的2×2×2 tensor，它包含8个元素。flat表示给tensor的每个mode保存一个shape和一个stride，用于索引物理数据。这种flat表示与C++中的std::mdspan、PyTorch中的torch.tensor、NumPy中的 numpy.ndarray以及许多其他类似库所采用的表示完全相同。这个2×2×2 tensor可以通过将第三个mode折叠到第一个mode上，折叠成一个4x2 tensor，如第二行所示。结果得到的flat表示为shape(4,2),stride(2,1)。原则上，这个2×2×2 tensor也可以通过将第三个mode折叠到第二个mode上，折叠成一个2×4 tensor。但是这样得到的结果不再具有flat表示——因为不存在一个整数能表示第二个mode的步长。
+
+CuTE 对经过folding的tensor的表示如最后一列所示，这强调了tensor folding实际上只是将mode进行合并。对于4×2矩阵的情况，其flat表示被称为 CuTE的coalesced操作；而对于2×4 矩阵，则不存在这样的flat表示。
+
+这种广义的tensor folding形式使得所有tensor contractions都可以写成单一的canonical contractions形式：
+\[
+C_{\hat{m}\hat{n}\hat{k}} = A_{\hat{m}\hat{k}\hat{l}} B_{\hat{n}\hat{k}\hat{l}} \qquad (2)
+\]
+其中每个mode可以是单个mode，也可以是多个mode的组合，我们称之为multi-mode。参照第 1.2节中的canonical loops，无论$\hat{m}$的形状是$M$还是$(M_{0}, M_{1})$,我们都可以用一维坐标$m$对其进行循环遍历。因此，任何tensor contraction都可以折叠成一个canonical batched-GEMM并通过一个四层嵌套循环实现求值：
+\begin{lstlisting}[language=C++]
+for(int l = 0; l < L; ++l)
+    for(int m = 0; m < M; ++m)
+        for(int n = 0; n < N; ++n)
+            for(int k = 0; k < K; k++)
+                C(m, n, l) += A(m, k, l) * B(n, k, l);
+\end{lstlisting}
+
+通过对folded layout的巧妙构造，这种简单的batched-GEMM实现可以用于计算各种兼容的tensor contractions，包括任意矩阵乘法（GEMM）、张量缩并（GETT）和卷积（CONV）。有关通用 GEMM 及其应用的详细信息，请参见第 2.6.2 节。
+
+然后，编译器和开发者便可以专注于loop reordering、tiling、vectorization以及其他常见的优化手段，都是通过改变循环嵌套的顺序和rank来实现。事实证明，这些变换通常可以用layout来表示，即permutations on the coordinates spaces of the algorithm。这些变换layout与数据布局进行compose，生成新的循环嵌套，并保证与原始问题的一致性。有关layout composition及其在generic partitioning中的应用，请参见第 3.3节。
 
 \section{Layout Representation}
 
-\subsection{Layout Algebra}
+\section{Layout Algebra}
 
 
 \bibliographystyle{alpha}
