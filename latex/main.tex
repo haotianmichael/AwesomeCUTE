@@ -7,11 +7,11 @@
 
 % Useful packages
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \usepackage[UTF8]{ctex} 
 \usepackage{xcolor}
-\usepackage{amsfonts}  % 或 amssymb
 \usepackage{listings}
 \lstset{
     basicstyle=\ttfamily\small,
@@ -34,7 +34,23 @@
         literate={>>>}{>>>}3{...}{...}3,
     }}
     {}
+\usepackage[most]{tcolorbox}
+\newtcolorbox{mycomment}{
+    colback=blue!5,        % 浅蓝色背景 (5%蓝色)
+    colframe=blue!30,      % 边框颜色
+    arc=3mm,               % 圆角
+    boxrule=0.5pt,         % 边框粗细
+    left=6pt, right=6pt, top=6pt, bottom=6pt,
+    breakable,             % 允许跨页
+    title=笔者注释         % 可选标题
+}
 
+\newtheorem{definition}{Definition}[section]
+
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\depth}{\operatorname{depth}}
+\newcommand{\Tuple}{\mathrm{Tuple}}
+\newcommand{\HTuple}{\mathrm{HTuple}}
 
 \title{CUTE白皮书v1}
 \author{xmm0@ucas}
@@ -182,7 +198,7 @@ L' = P(L) = L \circ P  \qquad (1)
 \subsection{Tensors and Folding}
 为了进一步说明shape既可以用一维坐标索引还可以用多维坐标索引，我们推广了[8]中将tensor contractions映射为类似BLAS的规范原语时所观察到的结果。
 
-在本文中，张量用粗体字母表示，下标用小写字母表示，这些下标的范围用对应的大写字母表示。张量的“秩”-rank指的是它所具有的维度（也称为mode）的数量。例如：
+在本文中，tensor用粗体字母表示，下标用小写字母表示，这些下标的范围用对应的大写字母表示。tensor的“秩”-rank指的是它所具有的维度（也称为mode）的数量。例如：
 \begin{itemize}
     \item A scalar, $\alpha$, is a rank-0 tensor
     \item A vector, $\mathbf{a}_i$, is a rank-1 tensor with $0 \leq i < I$
@@ -232,7 +248,281 @@ for(int l = 0; l < L; ++l)
 
 然后，编译器和开发者便可以专注于loop reordering、tiling、vectorization以及其他常见的优化手段，都是通过改变循环嵌套的顺序和rank来实现。事实证明，这些变换通常可以用layout来表示，即permutations on the coordinates spaces of the algorithm。这些变换layout与数据布局进行compose，生成新的循环嵌套，并保证与原始问题的一致性。有关layout composition及其在generic partitioning中的应用，请参见第 3.3节。
 
+\begin{mycomment}
+现代GPU的硬件指令强制要求复杂且固定的数据布局，传统的flat表达无法统一表达和推导这种布局例如线程ID到数据坐标的映射。CUTE的核心洞察是循环嵌套本质上也是一种Layout。而对循环嵌套的优化比如tiling本质上是一种Layout algebra。CUTE提倡不关注循环顺序，只关注逻辑坐标：C(i,j) += A(i,k) * B(k,j);这个算法没有写 for 循环。循环顺序（即如何遍历 i,j,k）被抽象成一个独立的 Tiler 或 Layout。
+\end{mycomment}
+
+
 \section{Layout Representation}
+CUTE Layout是通用概念，能够表示数据和线程排布，并在抽象物理地址、将迭代顺序与存储顺序分离方面具有极大的实用性。在本节中，我们将定义CUTE 对shape、layout 和tensor的表示，并构建它们与coord坐标的交互。如果任何一个算法可以通过数据Layout来变换成一种canonical from，那么该算法便可以用CUTE Layout唯一实现。关于此类算法及其应用详见2.6节。
+
+\subsection{Tuples and HTuples}
+Tuple和HTuple将作为最基础的数据结构：
+\begin{definition}[Tuple]
+一个 Tuple($\mathcal{T}$) 是从集合 $\mathcal{T}$ 中选取的元素的有限有序列表。
+对于 $X = (X_0, X_1, \ldots, X_{n-1}) \in \mathrm{Tuple}(\mathcal{X})$，定义以下操作：
+\begin{itemize}
+\item \textbf{Rank}: $\operatorname{rank}(X)$，即元组长度 $n$。
+\item \textbf{Access}: $X_i$，即元组 $X$ 的第 $i$ 个元素，其中 $0 \le i < \operatorname{rank}(X)$。
+\end{itemize}
+\end{definition}
+其中Tuple($\mathcal{T}$)是元素的flat集合，而HTuple($\mathcal{T}$)则是$\mathcal{T}$的层次化Tuple.
+
+\begin{definition}[HTuple]
+一个 $\mathrm{HTuple}(\mathcal{T})$ 要么是集合 $\mathcal{T}$ 中的一个元素，要么是一个 $\mathrm{Tuple}(\mathrm{HTuple}(\mathcal{T}))$。
+对于 $X \in \mathrm{HTuple}(\mathcal{X})$，定义：
+\begin{itemize}
+\item \textbf{Rank}: $\operatorname{rank}(X)$。若 $X \in \mathrm{Tuple}$，则为元组长度，否则为 $1$。
+\item \textbf{Access}: $X_i$，即 $X$ 的第 $i$ 个元素，$0 \le i < \operatorname{rank}(X)$。
+\item \textbf{Depth}: $\operatorname{depth}(X)$。若 $X \in \mathrm{Tuple}$，则 $1 + \max(\operatorname{depth}(X_0), \operatorname{depth}(X_1),\ldots)$，否则为 $0$。
+\end{itemize}
+例如，
+\[
+31 \quad (16,32) \quad (3,-8,7) \quad (2,(4,1),-1) \quad ((4,6),(3,(2,2),8))
+\]
+都是 $\mathrm{HTuple}(\mathbb{Z})$ 的实例。
+\end{definition}
+在推理 HTuple 时，定义同余（congruence）和弱同余（weak congruence）的概念是很有用的。
+\begin{definition}[Congruence]
+\textbf{同余}，记作 $\sim$，是 $\mathrm{HTuple}$ 上的等价关系。
+对于 $P \in \mathrm{HTuple}(\mathcal{P})$ 和 $S \in \mathrm{HTuple}(\mathcal{S})$，
+\[
+P \sim S \quad \text{iff} \quad
+\begin{cases}
+P \in \mathcal{P} \text{ 且 } S \in \mathcal{S}, \text{ 或} \\
+P, S \in \mathrm{Tuple} \text{ 且 } \operatorname{rank}(P) = \operatorname{rank}(S) \text{ 且 } \forall i,\; P_i \sim S_i
+\end{cases}
+\]
+并称 $P$ 和 $S$ 同余，具有相同的 \textbf{profile}(嵌套结构)。
+例如，
+\[
+(4,8)\sim(5,7),\quad (4,(2,4))\sim(7,(3,2)),\quad (\mathbf{v},((p,3)))\sim(0,((0,0)))
+\]
+但 $(4,8)$ 与 $(4,(2,4))$ 不同余，$(4,(2,4))$ 与 $(0,((0,0)))$ 也不同余。
+\end{definition}
+类似地，弱同余测试: the profile of one Htuple is at least as refined as another.
+\begin{definition}[Weak Congruence]
+\textbf{弱同余}，记作 $\lesssim$，是 $\mathrm{HTuple}$ 上的偏序关系。
+对于 $P \in \mathrm{HTuple}(\mathcal{P})$ 和 $S \in \mathrm{HTuple}(\mathcal{S})$，
+\[
+P \lesssim S \quad \text{iff} \quad
+\begin{cases}
+P \in \mathcal{P}, \text{ 或} \\
+P, S \in \mathrm{Tuple} \text{ 且 } \operatorname{rank}(P) = \operatorname{rank}(S) \text{ 且 } \forall i,\; P_i \lesssim S_i
+\end{cases}
+\]
+并称 $P$ 和 $S$ 弱同余，$P$ 粗化（coarsens）$S$ 的 profile，$S$ 细化（refines）$P$ 的 profile。
+例如，
+\[
+30 \lesssim (a,b) \lesssim (\mathbf{v},(0,\alpha)),\quad 30 \lesssim (a,b,c) \lesssim ((0,0),0,0)
+\]
+但 $(a,b)$ 与 $(a,b,c)$ 不是弱同余，$(\mathbf{v},(0,\alpha))$ 与 $((0,0),0)$ 也不是弱同余。
+\end{definition}
+\begin{mycomment}
+上述两个定义都是递归定义。首先整数是flat元素，Tuple是flat元素集合，而HTuple是可嵌套的一种Tuple。两个HTuple同余则表示这两个HTuple的结构相同。举例说明$(a,b,c) \lesssim ((0,0),0,0)$:首先两者都是Tuple，且rank相等，则看第一元素，左边a是flat元素则$a \lesssim (0,0)$，剩余元素也如此，故成立。举例说明$(v, (0, \alpha))$与((0,0),0)不弱同余：两者都是Tuple且rank相等，看第一元素$v \lesssim (0,0)$但是第二元素$(0,\alpha)$不满足0的弱同余关系，因此不满足。
+\end{mycomment}
+
+\subsection{Shape}
+多维数组通常通过shape来进行描述，shape是一个正整数序列，描述了每个维度的范围。一个M×N 矩阵的二维形状表示为 (M,N)，并且自然地被坐标(m,n) 索引，其中$0\leq m < M$和 $0 \leq n < N$。对此的一个自然扩展是将shape表示为正整数的hierarchical tuple。
+\begin{definition}[Shape]
+一个 \textbf{shape} 是一个 \(\mathrm{HTuple}(\mathbb{Z}^+)\)，其中 \(\mathbb{Z}^+ = \{1, 2, 3, \dots\}\) 是正整数的集合。shape \(S\) 的\textbf{秩（rank）} 就是该 HTuple 的秩。shape \(S\) 的\textbf{大小（size）} 是其所有元素的乘积，记为 \(|S| = \prod_k |S_k|\)。
+\end{definition}
+
+层次化 shape 之所以特别有用，是因为它们可以被多种坐标系统所索引。考虑不超过 \(N\) 的整数集合：
+\[
+\mathbb{Z}_N = \{0, 1, 2, \dots, N-1\}.
+\]
+CUTE 观察到，一个二维 shape \((M, N)\) 也可以被解释为描述 \(MN\) 个一维元素，这些元素由一个一维integral coord \(i\)（满足 \(0 \leq i < MN\)）索引，前提是存在一个双射
+\[
+S : \mathbb{Z}_{MN} \leftrightarrow \mathbb{Z}_M \times \mathbb{Z}_N
+\]
+在一维integral coord \(i \in \mathbb{Z}_{MN}\) 与二维natural coord \((m, n) \in \mathbb{Z}_M \times \mathbb{Z}_N\) 之间建立映射。
+
+类似地，二维 shape \((M, NP)\) 可以解释为一个层次化 shape \((M, (N, P))\)，由natural coord \((m, (n, p))\) 索引，其中 \(0 \leq m < M\)，\(0 \leq n < N\)，\(0 \leq p < P\)。同样可以建立一个双射
+\[
+S : \mathbb{Z}_M \times \mathbb{Z}_{NP} \leftrightarrow \mathbb{Z}_M \times (\mathbb{Z}_N \times \mathbb{Z}_P)
+\]
+将二维coord \((m, q) \in \mathbb{Z}_M \times \mathbb{Z}_{NP}\) 映射到natural coord \((m, (n, p)) \in \mathbb{Z}_M \times (\mathbb{Z}_N \times \mathbb{Z}_P)\)。
+
+层次化shape和coord的一个直接结果是：tensor算法可以按照对它们最自然的shape来实现（第 2.6 节）——例如 COPY 使用一维shape，GEMM 使用二维shape，batched-GEMM 使用三维shape等等——同时仍然能够接受经过折叠后与算法规范弱同余的层次化shape，意思是任何复杂的shape经过折叠后如果与算法规范弱同余，CUTE便能直接处理该shape（第 2.2.1 节）。tensor数据的shape通常被表示为一个扁平的整数序列，但它们可以被任意折叠成通用tensor算法所接受的shape。此外，由于tensor的每个mode都关联一个stride（第 2.3 节）来索引数据，这种mode的折叠允许表示比COPY中的简单连续数组或BLAS GEMM中的行主序/列主序矩阵复杂得多的数据layout（第 2.4 节）。
+
+在接下来的章节中，我们将定义层次化shape的各个不同coord系统之间的这种兼容性概念和关系。
+\subsubsection{Coordinate Sets and Compatibility}
+如前所述，层次化shape支持通过多种coord系统进行索引。在此，我们为特定shape定义coord set，并定义shape之间共享coord sets的兼容性概念。
+
+\begin{definition}[coordinate set]
+\textbf{A coord set} 要么是非负整数的集合 \(\mathbb{Z}_N = \{0, 1, 2, \ldots, N-1\}\)，要么是coord set的笛卡尔积 \(\mathbb{Z}_N \times \mathbb{Z}_M = \mathbb{Z}_{(N,M)}\)。
+\end{definition}
+
+例如，以下是coord set的例子：
+\[
+\mathbb{Z}_6 = \{0, 1, 2, 3, 4, 5\}
+\]
+\[
+\mathbb{Z}_3 \times \mathbb{Z}_4 = \mathbb{Z}_{(3,4)} = \{(0,0), (1,0), (2,0), (0,1), (1,1), (2,1), (0,2), (1,2), (2,2), (0,3), (1,3), (2,3)\}
+\]
+\[
+(\mathbb{Z}_2 \times \mathbb{Z}_1) \times \mathbb{Z}_3 = \mathbb{Z}_{((2,1),3)} = \{((0,0), 0), ((1,0), 0), ((0,0), 1), ((1,0), 1), ((0,0), 2), ((1,0), 2)\}
+\]
+
+coord set \(\mathbb{Z}_S\) 正是shape \(S\) 的natural coord。shape \(S\) 的其他coord set \(\mathbb{P}_S\)是与 \(S\) 兼容且粗化 \(S\) 的shape对应的coord set。
+
+\begin{definition}[compatibility]
+\textbf{compatibility} \(\preceq\) 是shape集合上的一个偏序关系。对于shape \(P\) 和 \(S\)，
+\[
+P \preceq S \quad \text{当且仅当} \quad
+\begin{cases}
+P \in \mathbb{Z}^+ \text{ 且 } P = |S|, \text{或} \\
+P, S \in \text{Tuple} \text{ 且 } \operatorname{rank}(P) = \operatorname{rank}(S) \text{ 且 } \forall i,\; P_i \preceq S_i
+\end{cases}
+\]
+并称 \(P\) 和 \(S\) \textbf{compatible}，\(P\) \textbf{粗化} \(S\)，\(S\) \textbf{细化} \(P\)。
+
+compatibility要求两个shape具有相同的\textbf{size}，因此HTuple的整数值很重要。例如，
+\[
+30 \preceq (2,15) \preceq (2,(3,5)) \quad \text{以及} \quad 30 \preceq (6,5) \preceq ((3,2),5)
+\]
+但 \((2,(3,5))\) 和 \(((3,2),5)\) 不兼容，尽管它们整体size相同为30。
+\end{definition}
+\begin{mycomment}
+Shape就是一个HTuple，而前面定义的弱同余只要两个 HTuple 的嵌套结构一致，左边是flat元素即整数时无条件成立。而兼容性则在弱同余的基础上，额外要求数值上总大小相等——对于flat元素P，要求P = |S|(即P必须等于S所有维度大小乘积)，对于Tuple要求rank相等则隐含了结构一致。
+\end{mycomment}
+有了coord set和shape compatibility的定义，我们可以定义任意给定shape的所有compatible coord set。
+\begin{definition}[compatible coord sets]
+shape \(S\) 定义了一个\textbf{compatible coord sets} \(\mathbb{Z}(S)\)，即所有粗化 \(S\) 的shape的coord set的集合：
+\[
+\mathbb{Z}(S) = \{\mathbb{Z}_{S'} \mid S' \preceq S\}.
+\]
+
+每个shape都有一个integral coord set：
+\[
+\{0, 1, 2, \ldots, |S|-1\} = \mathbb{Z}_{|S|} \in \mathbb{Z}(S),
+\]
+并且每个秩为 \(r\) 的shape都有一个秩为 \(r\) 的coord set：
+\[
+\{(a_0, \ldots, a_{r-1}) \mid a_i \in \mathbb{Z}_{|S_i|}\} = \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} \in \mathbb{Z}(S).
+\]
+
+注意，如果shape \(P\) 粗化shape \(S\)，那么 \(\mathbb{Z}(P) \subseteq \mathbb{Z}(S)\)。这意味着shape \(P\) 内的任何coord也是shape \(S\) 内的coord。
+\end{definition}
+\begin{mycomment}
+弱同余和兼容性都是针对shape的概念。一个shape一般对应一个coord set。而2.6是定义了每个shape的natural coord set \(\mathbb{Z_{S}}\)，其mode维度与shape相等比如$\{2, \{3,4\}\}$，是最refined的。而对于只有一个整数mode比如$\{24\}$的shape来说，其coord set被称为integral coord set \(\mathbb{Z_{|S|}}\)是直接展平的整数集合。从shape$\{2, \{3,4\}\}$一直粗化到$\{24\}$，中间所有的shape对应的coord set都被称为$\{2, \{3,4\}\}$的兼容coord sets。
+\end{mycomment}
+\subsubsection{Coordinates}
+前面我们定义了coord set的概念，本节我们定义coord即coord set中元素的类别，定义shape的compatible coord sets之间的双射，并提供这些coord映射的示例。
+\begin{definition}[in-bounds coord]
+shape \(S\) 的一个\textbf{in-bounds coordinate}，或就是一般意义的\textbf{coord}，是其compatible coord set \(\mathbb{Z}_{S'} \in \mathbb{Z}(S)\) 中的元素 \(c\)，即 \(c \in \mathbb{Z}_{S'} \in \mathbb{Z}(S)\)。注意，coord总是 \(\mathrm{HTuple}(\mathbb{N})\)。当意图明确时，我们简写为 \(c \in \mathbb{Z}(S)\)。
+\end{definition}
+
+\begin{definition}[integral coord]
+shape \(S\) 的一个\textbf{integral coordinate}是coord \(\bar{c} \in \mathbb{Z}_{|S|} \in \mathbb{Z}(S)\)。注意integral coord总是一个整数 \(\bar{c} \in \mathbb{N}\)。
+\end{definition}
+
+\begin{definition}[natural coord]
+shape \(S\) 的一个\textbf{natural coordinate}是coord \(\tilde{c} \in \mathbb{Z}_{S} \in \mathbb{Z}(S)\)。注意，natural coord总是与shape同余的 \(\mathrm{HTuple}(\mathbb{N})\)，即 \(\tilde{c} \sim S\)。
+\end{definition}
+
+为了在in-bounds coords之间进行转换，我们在shape \(S\) 的coord sets上用固定枚举顺序来定义一个coord lists并完成转换。本文选择\textbf{余词典序（colexicographical ordering）} \( < \)，其定义为：
+\[
+(a_0, \ldots, a_n) < (b_0, \ldots, b_n) \quad \text{当且仅当} \quad 
+\begin{cases}
+a_n < b_n, & \text{或} \\
+a_n = b_n \text{ 且 } (a_0, \ldots, a_{n-1}) < (b_0, \ldots, b_{n-1})
+\end{cases}
+\]
+并根据需要递归应用。余词典序枚举定义了coord lists上的一个双射。函数
+\[
+\begin{aligned}
+\mathrm{idx2crd}: \mathbb{Z}_{|S|} &\to \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} \\
+i &\mapsto \left( i \bmod |S_0|,\;
+\left\lfloor \frac{i}{|S_0|} \right\rfloor \bmod |S_1|,\;
+\ldots,\;
+\left\lfloor \frac{i}{\prod_{k=0}^{r-2} |S_k|} \right\rfloor \right)
+\end{aligned}
+\]
+将 \(\mathbb{Z}_{|S|}\) 的第 \(i\) 个coord（shape \(S\) 的第 \(i\) 个integral coord）映射到 \(\mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)}\) 的第 \(i\) 个coord（shape \((|S_0|, |S_1|, \ldots, |S_{r-1}|)\) 的第 \(i\) 个natural coord）。也可以使用其他双射，例如反转或镜像的词典序或余词典序。
+
+\(\mathrm{idx2crd}\) 的逆由下式给出：
+\[
+\begin{aligned}
+\mathrm{cr2idx}: \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} &\to \mathbb{Z}_{|S|} \\
+(c_0, c_1, \ldots, c_{r-1}) &\mapsto c_0 + c_1 \cdot |S_0| + \cdots + c_{r-1} \cdot \prod_{k=0}^{r-2} |S_k|
+\end{aligned}
+\]
+它将 \(\mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)}\) 的第 \(i\) 个coord映射到 \(\mathbb{Z}_{|S|}\) 的第 \(i\) 个coord。
+
+如果两个shape兼容 \(P \preceq S\)，则 \(\mathbb{Z}_P\) 中的coord可以通过递归应用 \(\mathrm{idx2crd}\) 映射到 \(\mathbb{Z}_S\)，而 \(\mathbb{Z}_S\) 中的coord可以通过递归应用 \(\mathrm{crd2idx}\) 映射到 \(\mathbb{Z}_P\)。遵循coord的余词典序，图2列出了每个shape从integral coord到natural coord的映射。
+\begin{mycomment}
+假设 shape \((2, (3,4))\) 和 shape \(24\) 之间的坐标转换，计算规则按列优先（即第一个维度变化最快）：
+
+对于 integral coord \(i \in \{0,1,\dots,23\}\)，对应的 in-bounds coord \((a, (b, c))\) 由下式计算：
+\[
+a = i \bmod 2, \quad
+i_1 = \left\lfloor \frac{i}{2} \right\rfloor, \quad
+b = i_1 \bmod 3, \quad
+c = \left\lfloor \frac{i_1}{3} \right\rfloor.
+\]
+
+反之，从 in-bounds coord \((a, (b, c))\) 到 integral coord 的映射为：
+\[
+i = a + 2 \times (b + 3c) = a + 2b + 6c.
+\]
+考虑shape \(((2,3),4)\)，总大小 \(2 \times 3 \times 4 = 24\)。natural为 \(((x, y), z)\)，其中 \(x \in \{0,1\},\; y \in \{0,1,2\},\; z \in \{0,1,2,3\}\)。
+从integral coord \(i\) 到natural coord的映射为：
+\[
+\begin{aligned}
+x &= i \bmod 2, \\
+i_1 &= \left\lfloor \frac{i}{2} \right\rfloor, \\
+y &= i_1 \bmod 3, \\
+z &= \left\lfloor \frac{i_1}{3} \right\rfloor.
+\end{aligned}
+\]
+
+反之，从natural coord到integral coord的映射为：
+\[
+i = x + 2y + 6z.
+\]
+\end{mycomment}
+\paragraph{Out-of-bounds Coordinates}
+除了我们已经定义的coord set之外，定义那些可能不在shape coord set中的特定profile的coord也是有用的。
+
+\begin{definition}[admissible coordinate]
+shape \(S\) 的一个\textbf{admissible coordinate}是任何与shape弱同余的coord集合元素即 \(c \in \mathrm{HTuple}(\mathbb{Z})\)，即 \(c \lesssim S\)。
+\end{definition}
+
+\begin{definition}[out-of-bounds coordinate]
+shape \(S\) 的一个\textbf{out-of-bounds coordinate}是任何admissible coordinate \(c \in \mathrm{HTuple}(\mathbb{Z})\) 但不在界内，即 \(c \notin \mathbb{Z}(S)\)。比如对于shape $\{4,8\}$, coord $\{5,7\}$就是out-of-bounds,coord $\{-1,3\}$就是out-of-bounds. $\{3, 7\}$就是in-bounds coord,\textbf{注意coord和shape的区别。}
+\end{definition}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/fig2.png}
+    \label{fig:example}
+\end{figure}
+\begin{definition}[congruent coordinate]
+shape \(S\) 的一个\textbf{congruent coordinate}是与shape同余的任意coord \(c \in \mathrm{HTuple}(\mathbb{Z})\)，即 \(c \sim S\)。记作 \(\mathbb{Z}^S = \{c \in \mathrm{HTuple}(\mathbb{Z}) \mid c \sim S\}\)。
+\end{definition}
+
+也就是说，\(\mathbb{Z}_S\) 是由shape \(S\) 界定的有限坐标集，而 \(\mathbb{Z}^S\) 是与 \(S\) 同余的所有坐标构成的无限集。由于 \(\mathbb{Z}^S\) 中shape \(S\) 内的具体数值无关紧要，我们有时会使用 \((*, *)\) 作为占位符剖面（placeholder profile）。例如，
+\[
+\mathbb{Z}^{(*, *)} = \{(a, b) \mid a, b \in \mathbb{Z}\} \quad \text{以及} \quad \mathbb{Z}^{(*, (*,*))} = \{(a, (b, c)) \mid a, b, c \in \mathbb{Z}\}
+\]
+
+注意，\(\mathrm{idx2crd}\) 对所有整数（即 \(\mathbb{Z}^{|S|}\) 中的coord，而不仅仅是 \(\mathbb{Z}_{|S|}\) 中的整数）都有良好定义。当它在整数 \(i \geq |S|\) 上求值时，总会返回一个相对于shape \((|S_0|, |S_1|, \ldots, |S_{r-1}|)\) 而言out-of-bounds coord \((c_0, c_1, \ldots, c_{r-1})\)。相比之下，\(\mathrm{crd2idx}\) 对于out-of-bounds coord的输入不能保证返回out-of-bounds idx。\textcolor{blue}{因此，\(\mathrm{crd2idx}\) 和 \(\mathrm{idx2crd}\) 仅在in-bounds coord上求值时互为逆函数。}
+
+\subsection{Stride}
+\subsubsection{Integer-Semimodules}
+\subsection{Layout}
+\subsubsection{Notations and Operations}
+\subsubsection{Layouts Examples}
+\subsubsection{Completeness}
+\subsubsection{Semi-Linearity}
+
+
+\subsection{Tensor}
+\subsubsection{Slicing}
+\subsection{Applications}
+\subsubsection{COPY}
+\subsubsection{GEMM}
 
 \section{Layout Algebra}
 
