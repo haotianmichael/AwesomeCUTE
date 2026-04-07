@@ -391,7 +391,7 @@ Shape就是一个HTuple，而前面定义的弱同余只要两个 HTuple 的嵌�
 \begin{definition}[compatible coord sets]
 shape \(S\) 定义了一个\textbf{compatible coord sets} \(\mathbb{Z}(S)\)，即所有粗化 \(S\) 的shape的coord set的集合：
 \[
-\mathbb{Z}(S) = \{\mathbb{Z}_{S'} \mid S' \preceq S\}.
+\mathbb{Z}(S) = \{\mathbb{Z}_{S'} \mid S' \preceq S\}.  \qquad (3)
 \]
 
 每个shape都有一个integral coord set：
@@ -438,7 +438,7 @@ i &\mapsto \left( i \bmod |S_0|,\;
 \left\lfloor \frac{i}{|S_0|} \right\rfloor \bmod |S_1|,\;
 \ldots,\;
 \left\lfloor \frac{i}{\prod_{k=0}^{r-2} |S_k|} \right\rfloor \right)
-\end{aligned}
+\end{aligned}  \qquad (4)
 \]
 将 \(\mathbb{Z}_{|S|}\) 的第 \(i\) 个coord（shape \(S\) 的第 \(i\) 个integral coord）映射到 \(\mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)}\) 的第 \(i\) 个coord（shape \((|S_0|, |S_1|, \ldots, |S_{r-1}|)\) 的第 \(i\) 个natural coord）。也可以使用其他双射，例如反转或镜像的词典序或余词典序。
 
@@ -447,7 +447,7 @@ i &\mapsto \left( i \bmod |S_0|,\;
 \begin{aligned}
 \mathrm{cr2idx}: \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} &\to \mathbb{Z}_{|S|} \\
 (c_0, c_1, \ldots, c_{r-1}) &\mapsto c_0 + c_1 \cdot |S_0| + \cdots + c_{r-1} \cdot \prod_{k=0}^{r-2} |S_k|
-\end{aligned}
+\end{aligned}  \qquad (5)
 \]
 它将 \(\mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)}\) 的第 \(i\) 个coord映射到 \(\mathbb{Z}_{|S|}\) 的第 \(i\) 个coord。
 
@@ -510,10 +510,112 @@ shape \(S\) 的一个\textbf{congruent coordinate}是与shape同余的任意coor
 注意，\(\mathrm{idx2crd}\) 对所有整数（即 \(\mathbb{Z}^{|S|}\) 中的coord，而不仅仅是 \(\mathbb{Z}_{|S|}\) 中的整数）都有良好定义。当它在整数 \(i \geq |S|\) 上求值时，总会返回一个相对于shape \((|S_0|, |S_1|, \ldots, |S_{r-1}|)\) 而言out-of-bounds coord \((c_0, c_1, \ldots, c_{r-1})\)。相比之下，\(\mathrm{crd2idx}\) 对于out-of-bounds coord的输入不能保证返回out-of-bounds idx。\textcolor{blue}{因此，\(\mathrm{crd2idx}\) 和 \(\mathrm{idx2crd}\) 仅在in-bounds coord上求值时互为逆函数。}
 
 \subsection{Stride}
+前一节描述了shape、shape的层次以及这些shape的coord。为了构建数据、线程或其他对象的layouts，我们定义了从shape内的coord到offsets的映射。
+
+\begin{definition}[Stride]
+shape \( S \) 的\textbf{stride} \( D \) 是一个与shape \( S \) 同余的 HTuple(\( D \))，即 \( S \sim D \)。该stride定义了从natural coord \( \tilde{c} \in \mathbb{Z}_S \) 到codomain \( D \) 的映射，由下式给出：
+\[
+\text{inner\_product: }  \mathbb{Z} \cdot D \to D,\quad c \cdot d \mapsto cd
+\]
+\[
+\text{inner\_product: } \text{HTuple}(\mathbb{Z}) \cdot \text{HTuple}(D) \to D,\quad c \cdot d \mapsto \sum_i \text{inner\_product}(c_i, d_i)  \qquad (6)
+\]
+在大多数情况下，stride也是 HTuple(\( \mathbb{Z} \))，即 \( D = \mathbb{Z} \)。由上述inner\_product产生的整数结果通常被解释为数组中的offsets。然而，stride元素的概念可以推广到任何integer\_semimodule中的元素，这为layouts所能表示的函数范围提供了显著的灵活性。
+\end{definition}
+
 \subsubsection{Integer-Semimodules}
+
+\begin{definition}[integer-semimodule]
+\textbf{integer-semimodule}是一个集合 \( M \)，配备了associative addition \( M + M \to M \) 和scalar multiplication \( \mathbb{Z} \cdot M \to M \)。对于 \( a, b \in \mathbb{Z} \) 以及 \( m, n, p \in M \)，加法和标量乘法满足：
+\begin{itemize}
+\item Multiplicative Identity：\( 1 \cdot m = m \)，
+\item Additive Associativity：\( m + (n + p) = (m + n) + p \)，
+\item Multiplicative Associativity：\( a \cdot (b \cdot m) = (ab) \cdot m \)。
+\end{itemize}
+不要求additive identities和inverses，因此 \( (M, +) \) 是一个半群semigroup。我们将integer-semimodule写作 \( (M, +, \cdot) \)，表示集合 \( M \)、加法运算 \( + \) 和标量乘法 \( \cdot \)。
+\end{definition}
+
+整数 \( \mathbb{Z} \) 是一个integer-semimodules。有理数 \( \mathbb{Q} \) 是一个integer-semimodule。域 \( \mathbb{F}_2 = (\{0, 1\}, \text{XOR}, \text{AND}) \)（模 2 算术运算）是一个integer-semimodule。任何integer-semimodule的笛卡尔积或 HTuple，在支持逐元素加法和标量乘法的情况下也是integer-semimodule。
+
+一个特别有用的integer-semimodule是 \( (\mathbb{Z}^S, +, \cdot) \)，其中 \( \mathbb{Z}^S \) 是所有与 \( S \) 同余的 HTuple(\( \mathbb{Z} \)) 的集合。例如，rank-2 arithmetic tuples的一组基元素构成一个integer-semimodule：
+\[
+e_0 = (1, 0), \quad e_1 = (0, 1), \quad \mathbb{Z}^{(*, *)} = \{a \cdot e_0 + b \cdot e_1 \mid a, b \in \mathbb{Z}\}
+\]
+其中integer scaling和addition按元素定义：
+\[
+a \cdot e_0 + b \cdot e_1 = (a, b)
+\]
+因此，\( e_0, e_1 \) 以及它们的任何线性组合都可以用作layout中的stride。通过选择来自 \( \mathbb{Z}^S \) 的stride元素，layout可以通过 \texttt{inner\_product} 运算生成shape \( S \) 的natural coord。
+
 \subsection{Layout}
+
+CuTE 使用shape \( S \) 和stride \( D \) 来定义layout function，或简称为layout。shape \( S \) 定义了layout function的domain(coord list的集合)，而stride \( D \) 定义了layout function的codomain(映射结果的集合)。
+
+对之前给出的shape的另一种解释是：它是从所有coord lists的集合到natural coord的一个映射。这个映射是双射的，使得每个坐标都被映射到shape内唯一且等价的natural coord。类似地，stride是从shape的natural coord到某个codomain的映射。
+
+\[
+S : \mathbb{Z} \leftrightarrow \mathbb{Z}_S, \quad \forall Z \in \mathbb{Z}(S)
+\]
+\[
+D : \mathbb{Z}_S \to D
+\]
+
+其中 \( \leftrightarrow \) 表示函数 idx2crd (4) 和 crd2idx (5)，它们在兼容shape的natural coord之间进行映射；而 \( \to \) 映射是natural coord与stride之间的inner\_product (6)。
+
+shape和stride的composition定义了layout function，它是从所有coord lists的集合到codomain的一个映射。
+
+\textbf{定义 2.17.} layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional composition，其中 \( S \sim D \)，并对每个 \( Z \in \mathbb{Z}(S) \) 定义了映射 \( Z \to D \)。
+
 \subsubsection{Notations and Operations}
+
+我们根据上下文使用不同的记号来书写Layout \( L \)。例如：
+\[
+\begin{array}{l}
+(4,(3,2)) = S\\
+(2,(8,1)) = D
+\end{array}
+\quad \text{or} \quad
+(4,(3,2)) : (2,(8,1)) = S : D
+\quad \text{or} \quad
+(2,(8,1)) \circ (4,(3,2)) = D \circ S
+\]
+
+其中最后一种形式强调了shape和stride本身可以被解释为函数，它们复合起来定义layout。
+
+由于layout的定义域由其shape决定，layout的性质与shape的性质紧密相关。对于layout \( L = S : D \) 和 \( U = X : Y \)，我们定义：
+
+\begin{itemize}
+\item \(\text{rank}(L) = \text{rank}(S)\)：layout的rank等于其shape的rank。
+\item \(\text{depth}(L) = \text{depth}(S)\)：layout的深度等于其shape的深度。
+\item \(|L| = |S|\)：layout的size等于其shape的size。
+\item \( L_i = S_i : D_i \)：第 \( i \) 个sublayout由其shape和stride的第 \( i \) 个元素构造。
+\item \( \mathbb{Z}(L) = \mathbb{Z}(S) \)：layout的coord sets等于其shape的coord sets。
+\item \( L \sim U \Leftrightarrow S \sim X \)：两个layout的同余congruence等价于它们shape的congruence。
+\item \( L \preceq U \Leftrightarrow S \preceq X \)：两个layout的兼容性等价于它们shape的兼容性。
+\end{itemize}
+
+作为layout求值的一个例子，考虑图 3e 中的layout \( L = ((2, 2), (4, 2)) : ((1, 8), (2, 16)) \) 以及integral coord \( 22 \in \mathbb{Z}_{32} \in \mathbb{Z}(L) \)，那么
+
+\[
+L(22) = L(2, 5) = L((0, 1), (1, 1)) = 26
+\]
+
+这里我们依次展示了integral coord、等价的2D coord、等价的natural coord以及计算出的offset。
+
+layout的in-bounds domain是所有coord \( c \in \mathbb{Z}(L) \) 的集合。Layout也可以在out-of-bounds coords求值，类似于数组可以在界外索引上求值但行为未定义。因此，虽然layout的domain是有限集 \( \mathbb{Z}(L) \)，但其extended domain是所有与 \( S \) 弱同余的 HTuple(\( \mathbb{Z} \)) 构成的无限集 \( \mathbb{Z}^L \)。
+
+我们还区分Layout的codomain和image of a layout。layout的codomain是 \( D \)，通常是无限的（例如 \( \mathbb{Z} \) 或 \( \mathbb{Z}^D \)）。layout的image是有限的，是layout对domain内所有coords产生的值的范围。
+
+\[
+\text{image}(L) = L(\mathbb{Z}(L)) = L(\mathbb{Z}|_{L}) \subseteq \text{codomain}(L)
+\]
+
+\begin{mycomment}
+    "shape可以被看成是从所有coord lists到natural coords的一个映射"，本质上是idx2crd和crd2idx两个函数的系数$S_{0}, S_{1}...$都是shape的mode大小，其中coord list指的是compatible coordinate sets的任何一个coord sets包括与shape同余的natural coord set, 到所有week congruent的coord set到最粗的integral coords。而任何 compatible coordinate set 中的coord sets，都可以先转化为 integral coordinate，再转化为 natural coordinate.
+    另外要注意shape, coord sets, coord的写法区别： shape可以写成\{2, \{3, 4\}\}，coord sets必须是\{(0, (0,0)), (0, (0,1)), ..., (1, (2,3))\}, 而具体的坐标就是\{1, \{2,3\}\}.
+\end{mycomment}
 \subsubsection{Layouts Examples}
+
 \subsubsection{Completeness}
 \subsubsection{Semi-Linearity}
 
