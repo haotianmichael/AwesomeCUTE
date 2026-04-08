@@ -61,7 +61,7 @@
 \begin{abstract}
 针对现代高性能计算与深度学习设计的并行硬件架构越来越多地集成了专门的tensor指令，包括用于矩阵乘法的Tensor core以及针对多维数据的硬件优化copy操作。这些指令一般规定了固定的数据layouts，且layouts必须贯穿整个执行过程以确保正确性和最优性能。本文提出 CUTE，一种用于表示和操作tensor的新型数学规范。CUTE 引入了两项关键创新：\textcolor{red}{\textbf{(1)}} 一种分层的layout representation，直接扩展了传统的flat-shape和flat-stride的tensor表示 ，能够描述现代硬件指令所需的复杂映射；\textcolor{red}{\textbf{(2)}} 一套丰富的algebra of layout operations——包括concatenation、coalescence、composition、complementation、division、tiling和inversion——支持复杂的layout操作、推导、验证和静态分析。CUTE Layout为 GPU  kernel中的数据布局和线程排布管理提供了统一的框架，而其layout algebra则支持对layout属性进行强大的\textcolor{blue}{编译时}推理，并能够表达通用的tensor变换。
 本文证明，与传统方法相比，CUTE 的抽象能力显著提升了软件开发效率，促进了architecturally prescribed layouts即从NV硬件架构角度引入的layout的编译时验证，便于实现可泛化的algorithmic primitives即算法原语比如TiledCopy等，并能简洁地表达现代tensor指令所需的tilling与partitionint模式。
-CUTE 已成功部署于生产系统，构成了 NVIDIA CUTLASS 库以及包括 CuTe DSL 在内的多项相关工作的基础。
+CUTE 已成功部署于生产系统，构成了 NVIDIA CUTLASS 库以及包括 CUTE DSL 在内的多项相关工作的基础。
 \end{abstract}
 
 \section{Introduction and Motivation}
@@ -126,7 +126,7 @@ CUTE支持所有上述这些表示，并在此基础上进行了严格扩展，�
 
 由于CUTLASS v3中CUTE的C++实现是开源的并附带部分文档，它已经被一些独立工作所引用和使用，用于分析CUTE Layout和CUTE Algebraic Operations。Bhaskaracharya等人利用ISL在整数线性规划和仿射变换的背景下(多面体编译理论)分析了CUTE和Linear Layouts，但忽略了能够将Linear Layouts表示为 CUTE layout的stride抽象。LEGO使用了受限形式的CUTE layout及compositioin操作在代码生成器中生成复杂的索引。Colfax Research在范畴论的背景下分析了CUTE layout及其上的部分操作。在本文中，我们旨在对CUTE的概念及其应用提供更明确和形式化的处理。
 
-CUTE 的设计和概念已经在多个应用中证明了其实用性。例如CUTE已被用于 Graphene tensor编译器中，在其中起到表示tensor计算的重要作用。此外，CUTE的C++实现已被用于Stream-K算法的实现中，并且是NVIDIA CUTLASS v3库开发的核心。CUTE还成为LLM高性能算子的核心组件，包括FlashAttention及其后续的各代演进版本，这突显了它在深度学习前沿研究和应用中的重要性。CUTE也是一系列相关编译器项目的基础，包括CuTe DSL，这是一个基于Python的DSL，用于线性代数应用算子开发。
+CUTE 的设计和概念已经在多个应用中证明了其实用性。例如CUTE已被用于 Graphene tensor编译器中，在其中起到表示tensor计算的重要作用。此外，CUTE的C++实现已被用于Stream-K算法的实现中，并且是NVIDIA CUTLASS v3库开发的核心。CUTE还成为LLM高性能算子的核心组件，包括FlashAttention及其后续的各代演进版本，这突显了它在深度学习前沿研究和应用中的重要性。CUTE也是一系列相关编译器项目的基础，包括CUTE DSL，这是一个基于Python的DSL，用于线性代数应用算子开发。
 
 
 
@@ -229,7 +229,7 @@ L' = P(L) = L \circ P  \qquad (1)
 \end{figure}
 作为一个显式的tensor folding的例子，考虑图1第一行所示的2×2×2 tensor，它包含8个元素。flat表示给tensor的每个mode保存一个shape和一个stride，用于索引物理数据。这种flat表示与C++中的std::mdspan、PyTorch中的torch.tensor、NumPy中的 numpy.ndarray以及许多其他类似库所采用的表示完全相同。这个2×2×2 tensor可以通过将第三个mode折叠到第一个mode上，折叠成一个4x2 tensor，如第二行所示。结果得到的flat表示为shape(4,2),stride(2,1)。原则上，这个2×2×2 tensor也可以通过将第三个mode折叠到第二个mode上，折叠成一个2×4 tensor。但是这样得到的结果不再具有flat表示——因为不存在一个整数能表示第二个mode的步长。
 
-CuTE 对经过folding的tensor的表示如最后一列所示，这强调了tensor folding实际上只是将mode进行合并。对于4×2矩阵的情况，其flat表示被称为 CuTE的coalesced操作；而对于2×4 矩阵，则不存在这样的flat表示。
+CUTE 对经过folding的tensor的表示如最后一列所示，这强调了tensor folding实际上只是将mode进行合并。对于4×2矩阵的情况，其flat表示被称为 CUTE的coalesced操作；而对于2×4 矩阵，则不存在这样的flat表示。
 
 这种广义的tensor folding形式使得所有tensor contractions都可以写成单一的canonical contractions形式：
 \[
@@ -549,7 +549,7 @@ a \cdot e_0 + b \cdot e_1 = (a, b)
 
 \subsection{Layout}
 
-CuTE 使用shape \( S \) 和stride \( D \) 来定义layout function，或简称为layout。shape \( S \) 定义了layout function的domain(coord list的集合)，而stride \( D \) 定义了layout function的codomain(映射结果的集合)。
+CUTE 使用shape \( S \) 和stride \( D \) 来定义layout function，或简称为layout。shape \( S \) 定义了layout function的domain(coord list的集合)，而stride \( D \) 定义了layout function的codomain(映射结果的集合)。
 
 对之前给出的shape的另一种解释是：它是从所有coord lists的集合到natural coord的一个映射。这个映射是双射的，使得每个坐标都被映射到shape内唯一且等价的natural coord。类似地，stride是从shape的natural coord到某个codomain的映射。
 
@@ -564,7 +564,9 @@ D : \mathbb{Z}_S \to D
 
 shape和stride的composition定义了layout function，它是从所有coord lists的集合到codomain的一个映射。
 
-\textbf{定义 2.17.} layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional composition，其中 \( S \sim D \)，并对每个 \( Z \in \mathbb{Z}(S) \) 定义了映射 \( Z \to D \)。
+\begin{definition}[Layout]
+layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional composition，其中 \( S \sim D \)，并对每个 \( Z \in \mathbb{Z}(S) \) 定义了映射 \( Z \to D \)。
+\end{definition}
 
 \subsubsection{Notations and Operations}
 
@@ -615,20 +617,224 @@ layout的in-bounds domain是所有coord \( c \in \mathbb{Z}(L) \) 的集合。La
     另外要注意shape, coord sets, coord的写法区别： shape可以写成\{2, \{3, 4\}\}，coord sets必须是\{(0, (0,0)), (0, (0,1)), ..., (1, (2,3))\}, 而具体的坐标就是\{1, \{2,3\}\}.
 \end{mycomment}
 \subsubsection{Layouts Examples}
+在定义了shape、strides和layout之后，我们给出一些示例，展示CUTE layouts是一般意义的flat N维layouts的严格推广。
 
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/fig3.png}
+    \label{fig:example}
+\end{figure}
+Fig3展示了在密集线性代数库（例如CUTLASS）中常见的data layouts示例。每种layout都表示为一个从logical coords \((m,n) \in \mathbb{Z}^{(4,8)}\) 到offset \(k \in \mathbb{Z}\) 的映射。例如，这些offsets可用于索引数组中的元素。常见的row-major、col-major以及padded layouts都可以被CUTE layouts简单表示，而interleaved和mixed layouts则表明，通过使用nested shapes and strides，layouts的表示集合得到了严格扩展。特别地，grids-of-tiles-of-data可以直接用CUTE layouts表示。
+
+Fig4展示了使用integer-semimodule strides而非integer strides构建的layouts示例。Fig4a和4b展示了生成coord的layouts。在后续章节中，我们将发现这些coord layouts与对应的data layouts呈对称变换，并且通常用于检测和预测数据tensor中的out-of-bounds访问。此外，coord tensor对于Hopper和Blackwell架构中的TMA等指令非常有用，这些指令使用coord作为instructions arguments而非addresses。Fig4c 使用了一个integer-semimodule其中group addition被二元XOR取代。这可用于生成所谓的数据swizzle patterns，有助于避免shared mem读写访问模式中的bank conflict。这些示例突显了 CUTE layouts概念的统一性以及其所能表示函数的通用性。
 \subsubsection{Completeness}
-\subsubsection{Semi-Linearity}
+任意满足 \( f(0) = 0 \) 且定义域为有限集 \( \mathbb{Z}_N \) 的函数 \( f \) 都可以表示为有限序列 CuTE layouts的functional composition。这意味着 CuTE layouts在functional composition运算下构成一个集合。这样的函数 \( f \) 可以表示为如下复合序列：
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig4.png}
+    \label{fig:example}
+\end{figure}
+\[
+f \equiv (2, 2, 2, \dots) : (f(1), f(2), f(3), \dots) \circ (3, 1) : (1, 4) \circ (4, 1) : (1, 6) \circ \cdots \circ (N-1, 1) : (1, 2(N-2)).
+\]
 
+对于所有 \( i \in \mathbb{Z}_N / \{0\} \)，最右侧的 \( N-3 \) 个layouts将 \( i \) 映射为 \( 2^{i-1} \)，而最左侧的layouts将 \( 2^{i-1} \) 映射为 \( f(i) \)。注意在计算上述intermediate layouts时，我们使用了extended domain \( \mathbb{Z} \) 而非in-bounds domain \( \mathbb{Z}_N \)。
+
+\subsubsection{Semi-Linearity}
+shape-stride定义 \( L = D \circ S \) 与广义integer-module stride共同给出了layout functions的一个特别有用的linear-algebraic view：
+\[
+L(c) = (D \circ S)(c) = d \cdot S(c) = d \cdot \tilde{c}. \tag{7}
+\]
+
+shape function是一个到natural coords \( \tilde{c} \in \mathbb{Z}^S \) 的方便的semi-affine双射，而stride function是natural coords的线性函数。实际上，对于两个natural coords \( c_0, c_1 \in \mathbb{Z}^S \)，layout function是线性的：
+\[
+L(\alpha c_0 + \beta c_1) = d \cdot (\alpha c_0 + \beta c_1) = \alpha(d \cdot c_0) + \beta(d \cdot c_1) = \alpha L(c_0) + \beta L(c_1),
+\]
+
+因为此时shape function是恒等映射，而stride function是线性的。注意对于任意coords \( c_0, c_1 \in \mathbb{Z}(S) \)，layout function并不是线性的，因为shape function不是线性的：
+\[
+\tilde{c} = S(c_0 + c_1) \neq S(c_0) + S(c_1) = \tilde{c}_0 + \tilde{c}_1.
+\]
+
+因此，layout function在natural coords \( \tilde{c} \in \mathbb{Z}^S \) 下是线性的，但在任意coords \( c \in \mathbb{Z}(S) \) 下是非线性的。
+
+在natural coords下，\( d \cdot \tilde{c} \) 可以解释为matrix-vector product：
+
+\[
+L(c) = d \cdot \tilde{c} = D \cdot \tilde{c}
+\]
+
+其中 \( D \) 是一个矩阵，其元素选自某个integer-semimodule \( D \)。在最常见的integer strides情形中，\( D = \mathbb{Z} \)，这就是一个matrix-vector product，其中 \( D \in \mathbb{Z}^{1 \times n} \)。当stride选自coord integer-semimodule \( D = (\mathbb{Z}^S, +, \cdot) \) 时，这是一个matrix-vector product，其中 \( D \in \mathbb{Z}^{m \times n} \)。当stride是二元序列时，\( D = F_2^m = (\mathbb{Z}_{2^m}, \mathrm{XOR}, \cdot) \)，这是一个matrix-vector product，其中 \( D \in \mathbb{F}_2^{m \times n} \)。
+
+例如，Table 1展示了integer layout、coord layout和binary layout的线性形式。对 \( \mathbb{F}_2 \) 线性形式的深入研究包括比特置换补码（Bit Permute Complement）和比特矩阵乘补码（Bit Matrix Multiply Complement）变换，这些变换最近在 SIMT GPU 编程中找到了重要应用。在这些工作中，所考虑的变换形式为
+
+\[
+f(v) = Av + b \tag{8}
+\]
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab1.png}
+    \label{fig:example}
+\end{figure}
+其中 \( A \) 是一个 \( m \times n \) 的matrix of binary elements，\( v \) 是一个长度为 \( n \) 的binary vector，\( b \) 是一个长度为 \( m \) 的binary vector，所有算术运算均在模 2 下（在具有两个元素的有限域 \( \mathbb{F}_2 \) 中）进行。
+
+本文后续部分将定义 CUTE layouts上的algebraic operations，这些运算是对linear algebra的推广。CUTE layouts上的group composition可以解释为matrix-multipliaction的推广。CuTE layouts的right-inverses和left-inverses可以解释为linear algebra中的 Moore-Penrose pseudo-inverses。实际上，类似的linear algebraic expressions可以在 BCP 和 BMMC 分析中找到，这些工作都在算法分析中使用了分解、逆和矩阵乘积。CuTE layout algebra可以解释为将线性代数中的 BCP 和 BMMC operation推广到 \( \mathbb{F}_2 \) 域之外。特别地，CuTE layout algebra的主要动机是general integer strides found in exotic data layouts for tensors。在本文中，我们旨在证明这些operations的更通用的functional definitions通常对 CuTE layouts是可计算的，并且对广泛的分析和应用是有用的。
 
 \subsection{Tensor}
+最后我们定义tensor，它是 CUTE 的核心对象，通过将layout与accessor绑定而得到。accessor本质上是一个支持随机访问的、类似指针的对象，用于layout。
+\begin{definition}[accessor]
+\textbf{accessor}是一个支持offset和dereference操作的对象：
+\begin{itemize}
+\item \(e + d \to e'\)，将accessor \(e\) 偏移 \(d \in \mathcal{D}\)，得到另一个accessor \(e'\)；
+\item \(\ast e \to v\)，解引用accessor \(e\) 得到值 \(v\)；
+\item \(e[d] \to \ast(e + d)\)，下标运算符作为常用便捷写法。
+\end{itemize}
+当 \(\mathcal{D} = \mathbb{Z}\) 时，accessor的常见实现包括原始指针（例如 T*）、数组（例如 T[N]）以及随机访问迭代器（例如 thrust::counting\_iterator 和 thrust::transform\_iterator 等）。当 \(\mathcal{D}\) 是exotic integer-semimodule时，accessor必须与该semigroup的加法运算兼容。
+\end{definition}
+\begin{definition}[tensor]
+\textbf{tensor}定义为accessor \(e\) 与layout \(L\) 的composition，记为 \(T = e \circ L\)。tensor evaluates the layout的过程是：将coord \(c \in \mathbb{Z}(L)\) 映射到codomain \(\mathcal{D}\)，相应地偏移accessor，然后解引用得到tensor的值:
+\[
+T(c) = (e \circ L)(c) = \ast(e + L(c)) = e[L(c)], \tag{9}
+\]
+即给出tensor在coord \(c\) 处的值。
+\end{definition}
+大多数tensor是data layouts，使用内存地址作为accessor。例如，内存地址 \(p\) 可以作为指针accessor \(\{p\}\)，配合常规的偏移和解引用操作来构造data tensor：
+\begin{align*}
+\{p\} + b &\to \{p + b\},\\
+\ast\{p\} &\to \ast p,\\
+T &= \{p\} \circ L.
+\end{align*}
+此外，Fig3中所示的所有layouts都可以通过将其与counting iterator \(\{a\}\) 进行composition来转换为implicit tensors，该迭代器解引用得到存储的offset \(a \in \mathbb{Z}\)：
+\begin{align*}
+\{a\} + b &\to \{a + b\},\\
+\ast\{a\} &\to a,\\
+T &= \{a\} \circ L.
+\end{align*}
+类似地，Fig4a和4b中所示的coord layouts可以通过与accessor \(\{(a, b)\}\) 进行composition来转换为implicit tensors，该accessor使用coord进行偏移，并解引用得到存储的坐标 \((a, b) \in \mathbb{Z}^{(\ast, \ast)}\)：
+\begin{align*}
+\{(a, b)\} + (c, d) &\to \{(a + c, b + d)\},\\
+\ast\{(a, b)\} &\to (a, b),\\
+T &= \{(a, b)\} \circ L.
+\end{align*}
+
 \subsubsection{Slicing}
+tensor可以通过fully evaluated或partially evaluated（即slicing）来使用。由于 CUTE tensor可以看作带有offset的layout，因此可以沿着natural coord的任意modes进行任意slicing。
+
+\begin{itemize}
+\item \textbf{Fully evaluation}：使用完整coord \( c \) 应用公式 (9) 得到一个值。
+\item \textbf{Partial evaluation（Slicing）}：当使用不完整coord \( c = c' + c^* \) 进行slicing时，其中 \( c^* \) 表示 \( c \) 中未指定的部分，结果是一个新的tensor。该操作表示为：
+\[
+T(c) = (e \circ L)(c' + c^*) = (e + L(c')) \circ L(c^*) = e' \circ L(c^*) = T'(c^*),
+\tag{10}
+\]
+其中 \( L(c') \) 可以被fully evaluated并累加到 \( e \) 中，而 \( L(c^*) \) 是 \( L \) 中未被求值的sublayout。Slicing创建了一个可以被进一步求值或操作的sub-tensor。
+\end{itemize}
+
+Fig5 展示了从 \(6 \times 12\) 矩阵中切出行、列和子矩阵的示例。这些示例使用一个counting-iterator accessor（记作 \(\{a\}\)）来表示offset \( a \in \mathbb{Z} \)。Slicing过程包括将offset累加到tensor offset中，并确定layout中未求值的部分。
+
+在许多张量库（如 numpy.ndarray、torch.tensor 和 MATLAB）中，slicing使用类似上述的表示法：例如，使用 `my\_matrix[2,:]` 提取矩阵的第二行，使用 `my\_matrix[:,4]` 提取矩阵的第四列。这些库还支持ranged slicing，例如 `my\_matrix[2:4,1:3]` 提取从第二行到第四行、第一列到第三列的子矩阵。CuTE 不支持ranged slicing，原因如下：
+
+\begin{itemize}
+\item Ranged slicing无法表达Fig5中展示的所有slicing。最后一个slice示例无法仅通过对矩阵的行和列进行ranged slicing来表达。
+\item ranged slicing助长了如下的模式：
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\small]
+# Extract a TILE_SIZE of data for each thr_id
+thr_data = my_data[thr_id*TILE_SIZE:(thr_id+1)*TILE_SIZE]
+\end{lstlisting}
+这种模式将 `TILE\_SIZE`（通常是程序希望优化的静态常量）与 `thr\_id`（本质上是每个线程本地的动态索引）混为一谈。相反，CUTE 更倾向于使用两阶段的permute-and-slice方法，例如：
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\small]
+# Permute and reshape my_data tensor into shape ( TILE_SIZE , NumTiles )
+# This is a wrapper around the more general composition(my_data, Transform_Layout)
+tiled_data = logical_divide(my_data, TILE_SIZE)  # (TILE_SIZE, NumTiles)
+assert size[1](tiled_data) == NumThrs  # Verify NumTiles == NumThrs
+# Slice tiled tensor to retrieve TILE_SIZE local to thr_id
+thr_data = thr_tile_data[None, thr_id]  # TILE_SIZE
+\end{lstlisting}
+这种方法将不同的参数 `TILE\_SIZE` 和 `thr\_id` 分离开，便于编译器进行推理和静态信息传播（例如 `thr\_data` 的大小为 `TILE\_SIZE`），并且同样灵活。详细内容和示例请参见第 3.3.4 节（generic partitioning）和第 3.5.2 节（logical divide）。
+\item ranged slicing可能表达出无法用 CUTE Layout表示的slices。例如，对于Fig5中的 \( A \)，切片 \( A(0,0:2:12) \) 可能得到 \(\{0\} \circ (3,2):(15,100)\)，而切片 \( A(0:2:6,0) \) 由于请求的切片与 \( A \) 的layout不兼容而无法表示。这主要是因为请求的tile与tensor layout不兼容，因此我们更倾向于在permute-and-reshape（即composition）检测并暴露此类错误，而不是在slicing阶段。关于layout group composition的admissibility conditions的详细内容和示例请参见第 3.3.2 节。
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig5.png}
+    \label{fig:example}
+\end{figure}
+
 \subsection{Applications}
+CUTE 为一组layout提供了紧凑的表示，这组layout严格大于传统flat shapes and strides所能表示的layout。相比之下，像 CUTLASS v2 和 Thunderkittens这样的库需要逐一手动实现每种layout。这种方法劳动强度大、容易出错，并且需要大量的开发时间。为了说明其复杂性，CUTLASS v2 代码库包含近 300 个独立实现的layout，分布在 87 个文件中，总计约 55,000 行代码。此外，CUTLASS v2 中的许多算法仅设计用于这些layout的一个有限子集，这加剧了维护和可扩展性的挑战。相比之下，CUTE 的core layouts表示及其相关的algebra for manipulating layouts仅需 3,000 行代码，并且能够表示 CUTLASS v2 中所有 300 种layouts以及更多。用 CUTE 实现的算法可以对其输入的rank或shape施加约束，但仍然与满足这些前提条件的任何layout兼容。这种将算法逻辑与特定数据或线程layout解耦的方式带来了更灵活和可组合的代码。
+
+上述优势已得到认可，CuTE 现在构成了 CUTLASS v3、CUTLASS v4 和 CuTe DSL 的基础，这些库都构建在 CuTE 的核心layout representation and algebra之上。现代tensor instructions所需的复杂data layouts和partitioning patterns，可以通过 CuTE 单一、一致且可组合的表示来进行表示和操作，这种表示在 NVIDIA 指令集架构的多个代际中表现稳健。
+
+在本节中，我们将详细说明仅使用layout和tensor表示为两个最基本的算法（COPY 和 GEMM）提供强大的通用实现。这些算法使用 CuTE tensors实现，并用于说明逻辑实现可适用于广泛的应用。尽管这些算法本身通常是最优的，但它们可以作为优化版本的通用参考实现。第 3 节中的layout algebra提供了检查和操作layouts以执行这些优化的方法。
+
 \subsubsection{COPY}
+使用 CuTE 张量编写的通用 COPY 算法如下：
+\begin{lstlisting}[language=C++, basicstyle=\ttfamily\small]
+// @pre size(src) == size(dst)
+template <class TS, class SLayout,
+          class TD, class DLayout>
+void
+copy(Tensor<TS,SLayout> const& src,   // N
+     Tensor<TD,DLayout> & dst)        // N
+{
+    for (int i = 0; i < size(dst); ++i) {
+        dst(i) = src(i);
+    }
+}
+\end{lstlisting}
+
+其中前置条件指定了两个tensor的大小相等。在tensor参数的注释中等价地写为：两个tensor都与shape \( N \) 兼容。
+
+这个简单的 COPY 实现通过改变src tensors和destination tensors的layouts来适应广泛的应用。表2给出了常见应用及其对应的source and destinations layouts。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab2.png}
+    \label{fig:example}
+\end{figure}
+任意rank的tensor都可以复制到任意其他rank的tensor。从这个意义上说，无论参数的rank是多少，COPY 都是一个rank为 1 的算法。这是秩无关编程（rank-agnostic programming）的一种体现。
+
+当source and destination tensors的 idx2crd 函数计算成本较低时（例如，当张量shape在编译时静态已知时），上述实现实际上从不生成动态的coord transformations。在这种情况下，循环可以被展开，idx2crd 可以静态地应用于循环索引 \( i \)，并且内积（inner\_product）计算在计算offsets时产生的开销极小。这是静态分析和优化的一种形式，因为layout的shape,stride通常在编译时已知并且对编译器可见。如果 idx2crd 确实产生了运行时开销，所提供的实现仍然可以作为鲁棒的参考实现，用于验证那些可能进一步检查定义域并使用第 3 节所述操作变换layouts的优化版本。
+
 \subsubsection{GEMM}
+使用 CuTE 张量编写的通用 GEMM 算法如下：
+
+\begin{lstlisting}[language=C++, basicstyle=\ttfamily\small]
+// @pre M: size<0>(A) == size<0>(C)
+// @pre N: size<0>(B) == size<1>(C)
+// @pre K: size<1>(A) == size<1>(B)
+template <class TA, class ALayout,
+          class TB, class BLayout,
+          class TC, class CLayout>
+void
+gemm(Tensor<TA,ALayout> const& A,   // (M,K)
+     Tensor<TB,BLayout> const& B,   // (N,K)
+     Tensor<TC,CLayout> & C)        // (M,N)
+{
+    for (int k = 0; k < size<1>(B); ++k) {
+        for (int n = 0; n < size<0>(B); ++n) {
+            for (int m = 0; m < size<0>(A); ++m) {
+                C(m,n) += A(m,k) * B(n,k);
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+其中前置条件指明了 GEMM 算法的逻辑约束。在每个tensor参数的注释中，我们写出了每个tensor必须兼容的shape。
+
+这个简单的 GEMM 实现（以及batched-GEMM扩展）可以通过改变tensor的layouts来涵盖多种应用。在表3中展示了一些常见的应用和示例layouts。这些应用包括 BLAS GEMM 的所有 N-T 变体，以及 BLIS GEMM 的通用步长变体（\(d_m*\), \(d_n*\), \(d_k*\)）。它还可以作为一个完全通用的tensor-tensor contraction（GETT），其中tensor通过将logical row modes、column modes、reduction modes和batched modes分组来折叠成适当的矩阵形状。创建一个实现 im2col 变换 的布局（作为 CuTE 布局的函数复合）也使得 GEMM 能够实现 CONV，而 CONV 是许多现代机器学习应用的核心。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab3.png}
+    \label{fig:example}
+\end{figure}
+通过抽象化fused-multiply-add并提供足够强大的tiling工具，该算法可以在体系结构层次结构的每一层递归地进行调整和应用。
+
+
+
 
 \section{Layout Algebra}
-
-
 \bibliographystyle{alpha}
 \bibliography{sample}
 
