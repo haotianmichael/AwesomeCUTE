@@ -6,12 +6,16 @@
 \usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
 
 % Useful packages
+\usepackage{booktabs} 
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage[colorlinks=true, allcolors=blue]{hyperref}
 \usepackage[UTF8]{ctex} 
 \usepackage{xcolor}
+\definecolor{blue}{rgb}{0,0,0.8}
+\definecolor{red}{rgb}{0.8,0,0}
+\definecolor{green}{rgb}{0,0.6,0}
 \usepackage{listings}
 \lstset{
     basicstyle=\ttfamily\small,
@@ -319,7 +323,7 @@ P, S \in \mathrm{Tuple} \text{ 且 } \operatorname{rank}(P) = \operatorname{rank
 但 $(a,b)$ 与 $(a,b,c)$ 不是弱同余，$(\mathbf{v},(0,\alpha))$ 与 $((0,0),0)$ 也不是弱同余。
 \end{definition}
 \begin{mycomment}
-上述两个定义都是递归定义。首先整数是flat元素，Tuple是flat元素集合，而HTuple是可嵌套的一种Tuple。两个HTuple同余则表示这两个HTuple的结构相同。举例说明$(a,b,c) \lesssim ((0,0),0,0)$:首先两者都是Tuple，且rank相等，则看第一元素，左边a是flat元素则$a \lesssim (0,0)$，剩余元素也如此，故成立。举例说明$(v, (0, \alpha))$与((0,0),0)不弱同余：两者都是Tuple且rank相等，看第一元素$v \lesssim (0,0)$但是第二元素$(0,\alpha)$不满足0的弱同余关系，因此不满足。
+上述两个定义都是递归定义。首先整数是flat元素，Tuple是flat元素集合，而HTuple是可嵌套的一种Tuple。\textbf{HTuple:\{\{1,2\},2\}的rank = 2，因为\{1, 2\}本身算一个HTuple元素}。两个HTuple同余则表示这两个HTuple的结构相同。举例说明$(a,b,c) \lesssim ((0,0),0,0)$:首先两者都是Tuple，且rank相等，则看第一元素，左边a是flat元素则$a \lesssim (0,0)$，剩余元素也如此，故成立。举例说明$(v, (0, \alpha))$与((0,0),0)不弱同余：两者都是Tuple且rank相等，看第一元素$v \lesssim (0,0)$但是第二元素$(0,\alpha)$不满足0的弱同余关系，因此不满足。
 \end{mycomment}
 
 \subsection{Shape}
@@ -338,7 +342,7 @@ S : \mathbb{Z}_{MN} \leftrightarrow \mathbb{Z}_M \times \mathbb{Z}_N
 \]
 在一维integral coord \(i \in \mathbb{Z}_{MN}\) 与二维natural coord \((m, n) \in \mathbb{Z}_M \times \mathbb{Z}_N\) 之间建立映射。
 
-类似地，二维 shape \((M, NP)\) 可以解释为一个层次化 shape \((M, (N, P))\)，由natural coord \((m, (n, p))\) 索引，其中 \(0 \leq m < M\)，\(0 \leq n < N\)，\(0 \leq p < P\)。同样可以建立一个双射
+类似地，二维 shape \((M, NP)\) 可以解释为一个层次化 shape \((M, (N, P))\)，由该shape对应的natural coord \((m, (n, p))\) 索引，其中 \(0 \leq m < M\)，\(0 \leq n < N\)，\(0 \leq p < P\)。同样可以建立一个双射
 \[
 S : \mathbb{Z}_M \times \mathbb{Z}_{NP} \leftrightarrow \mathbb{Z}_M \times (\mathbb{Z}_N \times \mathbb{Z}_P)
 \]
@@ -364,8 +368,9 @@ S : \mathbb{Z}_M \times \mathbb{Z}_{NP} \leftrightarrow \mathbb{Z}_M \times (\ma
 \[
 (\mathbb{Z}_2 \times \mathbb{Z}_1) \times \mathbb{Z}_3 = \mathbb{Z}_{((2,1),3)} = \{((0,0), 0), ((1,0), 0), ((0,0), 1), ((1,0), 1), ((0,0), 2), ((1,0), 2)\}
 \]
-
-coord set \(\mathbb{Z}_S\) 正是shape \(S\) 的natural coord。shape \(S\) 的其他coord set \(\mathbb{P}_S\)是与 \(S\) 兼容且粗化 \(S\) 的shape对应的coord set。
+\begin{mycomment}
+ \textbf{coord set \(\mathbb{Z}_S\) 正是shape \(S\) 对应的的natural coord set}。shape \(S\) 的其他coord set \(\mathbb{P}_S\)是与 \(S\) 兼容且粗化 \(S\) 的shape对应的coord set。即每一个shape都有一个natural coord set，也可以与其他满足条件的shape共享自己的natural coord set但是对于其本身来说就不是natural的了。   
+\end{mycomment}
 
 \begin{definition}[compatibility]
 \textbf{compatibility} \(\preceq\) 是shape集合上的一个偏序关系。对于shape \(P\) 和 \(S\)，
@@ -382,36 +387,36 @@ compatibility要求两个shape具有相同的\textbf{size}，因此HTuple的整�
 \[
 30 \preceq (2,15) \preceq (2,(3,5)) \quad \text{以及} \quad 30 \preceq (6,5) \preceq ((3,2),5)
 \]
-但 \((2,(3,5))\) 和 \(((3,2),5)\) 不兼容，尽管它们整体size相同为30。
+但 \((2,(3,5))\) 和 \(((3,2),5)\) 不兼容，因为第一个Tuple元素2和(3, 2)的size不相同，尽管它们整体size相同为30。
 \end{definition}
-\begin{mycomment}
-Shape就是一个HTuple，而前面定义的弱同余只要两个 HTuple 的嵌套结构一致，左边是flat元素即整数时无条件成立。而兼容性则在弱同余的基础上，额外要求数值上总大小相等——对于flat元素P，要求P = |S|(即P必须等于S所有维度大小乘积)，对于Tuple要求rank相等则隐含了结构一致。
-\end{mycomment}
-有了coord set和shape compatibility的定义，我们可以定义任意给定shape的所有compatible coord set。
-\begin{definition}[compatible coord sets]
-shape \(S\) 定义了一个\textbf{compatible coord sets} \(\mathbb{Z}(S)\)，即所有粗化 \(S\) 的shape的coord set的集合：
+
+有了coord set和shape compatibility的定义，我们可以定义任意给定shape的所有compatible coord set的集合。
+\begin{definition}[a set of compatible coord sets]
+shape \(S\) 定义了一个\textbf{a set of compatible coord sets} \(\mathbb{Z}(S)\)，即所有粗化 \(S\) 的shape的coord set的集合(coord set的集合)：
 \[
 \mathbb{Z}(S) = \{\mathbb{Z}_{S'} \mid S' \preceq S\}.  \qquad (3)
 \]
 
-每个shape都有一个integral coord set：
+每个$\mathbb{Z}(S)$都会有一个integral coord set：
 \[
 \{0, 1, 2, \ldots, |S|-1\} = \mathbb{Z}_{|S|} \in \mathbb{Z}(S),
 \]
-并且每个秩为 \(r\) 的shape都有一个秩为 \(r\) 的coord set：
+每个秩为 \(r\) 的shape都有一个秩为 \(r\) 的natural coord set：
 \[
 \{(a_0, \ldots, a_{r-1}) \mid a_i \in \mathbb{Z}_{|S_i|}\} = \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} \in \mathbb{Z}(S).
 \]
 
 注意，如果shape \(P\) 粗化shape \(S\)，那么 \(\mathbb{Z}(P) \subseteq \mathbb{Z}(S)\)。这意味着shape \(P\) 内的任何coord也是shape \(S\) 内的coord。
 \end{definition}
+
 \begin{mycomment}
-弱同余和兼容性都是针对shape的概念。一个shape一般对应一个coord set。而2.6是定义了每个shape的natural coord set \(\mathbb{Z_{S}}\)，其mode维度与shape相等比如$\{2, \{3,4\}\}$，是最refined的。而对于只有一个整数mode比如$\{24\}$的shape来说，其coord set被称为integral coord set \(\mathbb{Z_{|S|}}\)是直接展平的整数集合。从shape$\{2, \{3,4\}\}$一直粗化到$\{24\}$，中间所有的shape对应的coord set都被称为$\{2, \{3,4\}\}$的兼容coord sets。
+一个shape对应一个natural coord set\(\mathbb{Z_{S}}\)，其mode维度与shape相等比如$\{2, \{3,4\}\}$，是最refined的。而对于只有一个整数mode(其大小是$\mathbb{Z_{S}}$所有mode大小的乘积)比如$\{24\}$的shape来说，其natural coord set被称为兼容集合的integral coord set \(\mathbb{Z_{|S|}}\)是直接展平的coord set。从shape$\{2, \{3,4\}\}$一直粗化到$\{24\}$，中间所有的shape对应的coord set都被称为$\{2, \{3,4\}\}$的a set of compatible coord sets。而$\{24\}$的set of compatible coord set只有它自己。
 \end{mycomment}
+
 \subsubsection{Coordinates}
 前面我们定义了coord set的概念，本节我们定义coord即coord set中元素的类别，定义shape的compatible coord sets之间的双射，并提供这些coord映射的示例。
 \begin{definition}[in-bounds coord]
-shape \(S\) 的一个\textbf{in-bounds coordinate}，或就是一般意义的\textbf{coord}，是其compatible coord set \(\mathbb{Z}_{S'} \in \mathbb{Z}(S)\) 中的元素 \(c\)，即 \(c \in \mathbb{Z}_{S'} \in \mathbb{Z}(S)\)。注意，coord总是 \(\mathrm{HTuple}(\mathbb{N})\)。当意图明确时，我们简写为 \(c \in \mathbb{Z}(S)\)。
+shape \(S\) 的一个\textbf{in-bounds coordinate}，或就是一般意义的\textbf{coord}，是其compatible coord set(这里指的是兼容坐标集合的集合中的元素：即其中一个兼容的坐标集合) \(\mathbb{Z}_{S'} \in \mathbb{Z}(S)\) 中的元素（这里指一个坐标） \(c\)，即 \(c \in \mathbb{Z}_{S'} \in \mathbb{Z}(S)\)。注意，coord总是 \(\mathrm{HTuple}(\mathbb{N})\)。当意图明确时，我们简写为 \(c \in \mathbb{Z}(S)\)。
 \end{definition}
 
 \begin{definition}[integral coord]
@@ -445,7 +450,7 @@ i &\mapsto \left( i \bmod |S_0|,\;
 \(\mathrm{idx2crd}\) 的逆由下式给出：
 \[
 \begin{aligned}
-\mathrm{cr2idx}: \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} &\to \mathbb{Z}_{|S|} \\
+\mathrm{crd2idx}: \mathbb{Z}_{(|S_0|, |S_1|, \ldots, |S_{r-1}|)} &\to \mathbb{Z}_{|S|} \\
 (c_0, c_1, \ldots, c_{r-1}) &\mapsto c_0 + c_1 \cdot |S_0| + \cdots + c_{r-1} \cdot \prod_{k=0}^{r-2} |S_k|
 \end{aligned}  \qquad (5)
 \]
@@ -453,6 +458,7 @@ i &\mapsto \left( i \bmod |S_0|,\;
 
 如果两个shape兼容 \(P \preceq S\)，则 \(\mathbb{Z}_P\) 中的coord可以通过递归应用 \(\mathrm{idx2crd}\) 映射到 \(\mathbb{Z}_S\)，而 \(\mathbb{Z}_S\) 中的coord可以通过递归应用 \(\mathrm{crd2idx}\) 映射到 \(\mathbb{Z}_P\)。遵循coord的余词典序，图2列出了每个shape从integral coord到natural coord的映射。
 \begin{mycomment}
+\textbf{要注意定义的顺序：先定义了shape及其对应的坐标集，再定义了坐标集合的集合,再定义了坐标集的元素即坐标，。这主要是因为shape本身是一个HTuple，shape和其兼容的shape之间的坐标是可以互相转换的（转换的是shape的坐标），但是最本质的转换永远是integral到natural之间的转换。}
 假设 shape \((2, (3,4))\) 和 shape \(24\) 之间的坐标转换，计算规则按列优先（即第一个维度变化最快）：
 
 对于 integral coord \(i \in \{0,1,\dots,23\}\)，对应的 in-bounds coord \((a, (b, c))\) 由下式计算：
@@ -491,7 +497,7 @@ shape \(S\) 的一个\textbf{admissible coordinate}是任何与shape弱同余的
 \end{definition}
 
 \begin{definition}[out-of-bounds coordinate]
-shape \(S\) 的一个\textbf{out-of-bounds coordinate}是任何admissible coordinate \(c \in \mathrm{HTuple}(\mathbb{Z})\) 但不在界内，即 \(c \notin \mathbb{Z}(S)\)。比如对于shape $\{4,8\}$, coord $\{5,7\}$就是out-of-bounds,coord $\{-1,3\}$就是out-of-bounds. $\{3, 7\}$就是in-bounds coord,\textbf{注意coord和shape的区别。}
+shape \(S\) 的一个\textbf{out-of-bounds coordinate}是任何admissible coordinate \(c \in \mathrm{HTuple}(\mathbb{Z})\) 但不是in-bounds的，即 \(c \notin \mathbb{Z}(S)\)(与shape同余但是不兼容)。比如对于shape $\{4,8\}$, coord $\{5,7\}$就是out-of-bounds,coord $\{-1,3\}$就是out-of-bounds. $\{3, 7\}$就是in-bounds coord。
 \end{definition}
 \begin{figure}[htbp]
     \centering
@@ -502,7 +508,7 @@ shape \(S\) 的一个\textbf{out-of-bounds coordinate}是任何admissible coordi
 shape \(S\) 的一个\textbf{congruent coordinate}是与shape同余的任意coord \(c \in \mathrm{HTuple}(\mathbb{Z})\)，即 \(c \sim S\)。记作 \(\mathbb{Z}^S = \{c \in \mathrm{HTuple}(\mathbb{Z}) \mid c \sim S\}\)。
 \end{definition}
 
-也就是说，\(\mathbb{Z}_S\) 是由shape \(S\) 界定的有限坐标集，而 \(\mathbb{Z}^S\) 是与 \(S\) 同余的所有坐标构成的无限集。由于 \(\mathbb{Z}^S\) 中shape \(S\) 内的具体数值无关紧要，我们有时会使用 \((*, *)\) 作为占位符剖面（placeholder profile）。例如，
+也就是说，\(\mathbb{Z}_S\) 是由shape \(S\) 定义的natural coord set，而 \(\mathbb{Z}^S\) 是与 \(S\) 同余的所有坐标构成的无限集。由于 \(\mathbb{Z}^S\) 中shape \(S\) 内的具体数值无关紧要，我们有时会使用 \((*, *)\) 表示。例如，
 \[
 \mathbb{Z}^{(*, *)} = \{(a, b) \mid a, b \in \mathbb{Z}\} \quad \text{以及} \quad \mathbb{Z}^{(*, (*,*))} = \{(a, (b, c)) \mid a, b, c \in \mathbb{Z}\}
 \]
@@ -546,12 +552,15 @@ e_0 = (1, 0), \quad e_1 = (0, 1), \quad \mathbb{Z}^{(*, *)} = \{a \cdot e_0 + b 
 a \cdot e_0 + b \cdot e_1 = (a, b)
 \]
 因此，\( e_0, e_1 \) 以及它们的任何线性组合都可以用作layout中的stride。通过选择来自 \( \mathbb{Z}^S \) 的stride元素，layout可以通过 \texttt{inner\_product} 运算生成shape \( S \) 的natural coord。
+\begin{mycomment}
+传统的stride是整数，将逻辑坐标(i, j)映射为内存偏移量i * s0 + j * s1;当stride取自rank-2 arithmetic的时候stride本身就是一个二维向量比如D = ((1, 0), (0, 1))对于坐标(i, j), inner-product计算为i(1, 0) + j(0, 1) = (i, j)结果仍然是一个二维向量。这样可以把将一个natural coord映射到另一个二维坐标，而不是直接映射到线性内存偏移（codomain改变了）。   
+\end{mycomment}
 
 \subsection{Layout}
 
-CUTE 使用shape \( S \) 和stride \( D \) 来定义layout function，或简称为layout。shape \( S \) 定义了layout function的domain(coord list的集合)，而stride \( D \) 定义了layout function的codomain(映射结果的集合)。
+CUTE 使用shape \( S \) 和stride \( D \) 来定义layout function，或简称为layout。shape \( S \) 定义了layout function的domain，而stride \( D \) 定义了layout function的codomain。
 
-对之前给出的shape的另一种解释是：它是从所有coord lists的集合到natural coord的一个映射。这个映射是双射的，使得每个坐标都被映射到shape内唯一且等价的natural coord。类似地，stride是从shape的natural coord到某个codomain的映射。
+对之前给出的shape的一种解释是：它是从所有coord lists的集合到natural coord的一个映射。这个映射是双射的，使得每个坐标都被映射到shape内唯一且等价的natural coord。类似地，stride是从shape的natural coord到某个codomain的映射。
 
 \[
 S : \mathbb{Z} \leftrightarrow \mathbb{Z}_S, \quad \forall Z \in \mathbb{Z}(S)
@@ -565,7 +574,7 @@ D : \mathbb{Z}_S \to D
 shape和stride的composition定义了layout function，它是从所有coord lists的集合到codomain的一个映射。
 
 \begin{definition}[Layout]
-layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional composition，其中 \( S \sim D \)，并对每个 \( Z \in \mathbb{Z}(S) \) 定义了映射 \( Z \to D \)。
+Layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional composition，其中 \( S \sim D \)，并对每个 \( Z \in \mathbb{Z}(S) \) 定义了映射 \( Z \to D \)。
 \end{definition}
 
 \subsubsection{Notations and Operations}
@@ -584,7 +593,7 @@ layout \( L = D \circ S \) 是shape \( S \) 和stride \( D \) 的functional comp
 
 其中最后一种形式强调了shape和stride本身可以被解释为函数，它们复合起来定义layout。
 
-由于layout的定义域由其shape决定，layout的性质与shape的性质紧密相关。对于layout \( L = S : D \) 和 \( U = X : Y \)，我们定义：
+由于layout的domain由其shape决定，layout的性质与shape的性质紧密相关。对于layout \( L = S : D \) 和 \( U = X : Y \)，我们定义：
 
 \begin{itemize}
 \item \(\text{rank}(L) = \text{rank}(S)\)：layout的rank等于其shape的rank。
@@ -604,7 +613,7 @@ L(22) = L(2, 5) = L((0, 1), (1, 1)) = 26
 
 这里我们依次展示了integral coord、等价的2D coord、等价的natural coord以及计算出的offset。
 
-layout的in-bounds domain是所有coord \( c \in \mathbb{Z}(L) \) 的集合。Layout也可以在out-of-bounds coords求值，类似于数组可以在界外索引上求值但行为未定义。因此，虽然layout的domain是有限集 \( \mathbb{Z}(L) \)，但其extended domain是所有与 \( S \) 弱同余的 HTuple(\( \mathbb{Z} \)) 构成的无限集 \( \mathbb{Z}^L \)。
+layout的in-bounds domain是所有 \( c \in \mathbb{Z}(L) \) 中的coord的集合。Layout也可以在out-of-bounds coords求值，类似于数组可以在界外索引上求值但行为未定义。因此，虽然layout的domain是有限集 \( \mathbb{Z}(L) \)，但其extended domain是所有与 \( S \) 弱同余的 HTuple(\( \mathbb{Z} \)) 构成的无限集 \( \mathbb{Z}^L \)。
 
 我们还区分Layout的codomain和image of a layout。layout的codomain是 \( D \)，通常是无限的（例如 \( \mathbb{Z} \) 或 \( \mathbb{Z}^D \)）。layout的image是有限的，是layout对domain内所有coords产生的值的范围。
 
@@ -614,7 +623,7 @@ layout的in-bounds domain是所有coord \( c \in \mathbb{Z}(L) \) 的集合。La
 
 \begin{mycomment}
     "shape可以被看成是从所有coord lists到natural coords的一个映射"，本质上是idx2crd和crd2idx两个函数的系数$S_{0}, S_{1}...$都是shape的mode大小，其中coord list指的是compatible coordinate sets的任何一个coord sets包括与shape同余的natural coord set, 到所有week congruent的coord set到最粗的integral coords。而任何 compatible coordinate set 中的coord sets，都可以先转化为 integral coordinate，再转化为 natural coordinate.
-    另外要注意shape, coord sets, coord的写法区别： shape可以写成\{2, \{3, 4\}\}，coord sets必须是\{(0, (0,0)), (0, (0,1)), ..., (1, (2,3))\}, 而具体的坐标就是\{1, \{2,3\}\}.
+    另外要注意shape, coord sets, coord的写法区别： shape可以写成\{2, \{3, 4\}\}，coord sets必须是\{(0, (0,0)), (0, (0,1)), ..., (1, (2,3))\}, 而具体的坐标就是\{1, \{2,3\}\}. shape定义了Layout的domain和extended domain，Stride定义了Layout的codomain和image.
 \end{mycomment}
 \subsubsection{Layouts Examples}
 在定义了shape、strides和layout之后，我们给出一些示例，展示CUTE layouts是一般意义的flat N维layouts的严格推广。
@@ -626,27 +635,30 @@ layout的in-bounds domain是所有coord \( c \in \mathbb{Z}(L) \) 的集合。La
 \end{figure}
 Fig3展示了在密集线性代数库（例如CUTLASS）中常见的data layouts示例。每种layout都表示为一个从logical coords \((m,n) \in \mathbb{Z}^{(4,8)}\) 到offset \(k \in \mathbb{Z}\) 的映射。例如，这些offsets可用于索引数组中的元素。常见的row-major、col-major以及padded layouts都可以被CUTE layouts简单表示，而interleaved和mixed layouts则表明，通过使用nested shapes and strides，layouts的表示集合得到了严格扩展。特别地，grids-of-tiles-of-data可以直接用CUTE layouts表示。
 
-Fig4展示了使用integer-semimodule strides而非integer strides构建的layouts示例。Fig4a和4b展示了生成coord的layouts。在后续章节中，我们将发现这些coord layouts与对应的data layouts呈对称变换，并且通常用于检测和预测数据tensor中的out-of-bounds访问。此外，coord tensor对于Hopper和Blackwell架构中的TMA等指令非常有用，这些指令使用coord作为instructions arguments而非addresses。Fig4c 使用了一个integer-semimodule其中group addition被二元XOR取代。这可用于生成所谓的数据swizzle patterns，有助于避免shared mem读写访问模式中的bank conflict。这些示例突显了 CUTE layouts概念的统一性以及其所能表示函数的通用性。
-\subsubsection{Completeness}
-任意满足 \( f(0) = 0 \) 且定义域为有限集 \( \mathbb{Z}_N \) 的函数 \( f \) 都可以表示为有限序列 CuTE layouts的functional composition。这意味着 CuTE layouts在functional composition运算下构成一个集合。这样的函数 \( f \) 可以表示为如下复合序列：
+Fig4展示了使用integer-semimodule strides而非integer strides构建的layouts示例(stride变成二维)。Fig4a和4b展示了生成coord的layouts。在后续章节中，我们将发现这些coord layouts与对应的data layouts呈对称变换，并且通常用于检测和预测数据tensor中的out-of-bounds访问。此外，coord tensor对于Hopper和Blackwell架构中的TMA等指令非常有用，这些指令使用coord作为instructions arguments而非addresses。Fig4c 使用了一个integer-semimodule其中group addition被二元XOR取代。这可用于生成所谓的数据swizzle patterns，有助于避免shared mem读写访问模式中的bank conflict。这些示例突显了 CUTE layouts概念的统一性以及其所能表示函数的通用性。
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=0.8\textwidth]{pic/Fig4.png}
     \label{fig:example}
 \end{figure}
+
+\subsubsection{Completeness}
+任意满足 \( f(0) = 0 \) 且domain为有限集 \( \mathbb{Z}_N \) 的函数 \( f \) 都可以表示为有限个CuTE layouts的functional composition。这意味着 CuTE layouts在functional composition运算下构成一个集合。这样的函数 \( f \) 可以表示为如下复合序列：
 \[
 f \equiv (2, 2, 2, \dots) : (f(1), f(2), f(3), \dots) \circ (3, 1) : (1, 4) \circ (4, 1) : (1, 6) \circ \cdots \circ (N-1, 1) : (1, 2(N-2)).
 \]
 
 对于所有 \( i \in \mathbb{Z}_N / \{0\} \)，最右侧的 \( N-3 \) 个layouts将 \( i \) 映射为 \( 2^{i-1} \)，而最左侧的layouts将 \( 2^{i-1} \) 映射为 \( f(i) \)。注意在计算上述intermediate layouts时，我们使用了extended domain \( \mathbb{Z} \) 而非in-bounds domain \( \mathbb{Z}_N \)。
-
+\begin{mycomment}
+   证明CUTE Layout能够表示任何满足f(0)=0的有限定义域函数，是一套足够通用的tensor Layout 描述语言。
+\end{mycomment}
 \subsubsection{Semi-Linearity}
 shape-stride定义 \( L = D \circ S \) 与广义integer-module stride共同给出了layout functions的一个特别有用的linear-algebraic view：
 \[
 L(c) = (D \circ S)(c) = d \cdot S(c) = d \cdot \tilde{c}. \tag{7}
 \]
 
-shape function是一个到natural coords \( \tilde{c} \in \mathbb{Z}^S \) 的方便的semi-affine双射，而stride function是natural coords的线性函数。实际上，对于两个natural coords \( c_0, c_1 \in \mathbb{Z}^S \)，layout function是线性的：
+shape function是一个方便的semi-affine双射，它将coord映射到到natural coords \( \tilde{c} \in \mathbb{Z}^S \) ，而stride function是natural coords上的的线性函数。实际上，对于两个natural coords \( c_0, c_1 \in \mathbb{Z}^S \)，layout function是线性的：
 \[
 L(\alpha c_0 + \beta c_1) = d \cdot (\alpha c_0 + \beta c_1) = \alpha(d \cdot c_0) + \beta(d \cdot c_1) = \alpha L(c_0) + \beta L(c_1),
 \]
@@ -679,6 +691,9 @@ f(v) = Av + b \tag{8}
 其中 \( A \) 是一个 \( m \times n \) 的matrix of binary elements，\( v \) 是一个长度为 \( n \) 的binary vector，\( b \) 是一个长度为 \( m \) 的binary vector，所有算术运算均在模 2 下（在具有两个元素的有限域 \( \mathbb{F}_2 \) 中）进行。
 
 本文后续部分将定义 CUTE layouts上的algebraic operations，这些运算是对linear algebra的推广。CUTE layouts上的group composition可以解释为matrix-multipliaction的推广。CuTE layouts的right-inverses和left-inverses可以解释为linear algebra中的 Moore-Penrose pseudo-inverses。实际上，类似的linear algebraic expressions可以在 BCP 和 BMMC 分析中找到，这些工作都在算法分析中使用了分解、逆和矩阵乘积。CuTE layout algebra可以解释为将线性代数中的 BCP 和 BMMC operation推广到 \( \mathbb{F}_2 \) 域之外。特别地，CuTE layout algebra的主要动机是general integer strides found in exotic data layouts for tensors。在本文中，我们旨在证明这些operations的更通用的functional definitions通常对 CuTE layouts是可计算的，并且对广泛的分析和应用是有用的。
+\begin{mycomment}
+    Integer-semimodule是一个宽泛的概念，包括整数和二维空间，而且shape本身就是coord list中coords到natural coord的映射，所以当coord正好对应当前shape的natural coord的时候，不论stride是整数还是二维，Layout function都是线性的。但是对于其他的coord，Layout无法保证线性。对应到\(L(c) = d \cdot \tilde{c} = D \cdot \tilde{c}\)的时候，c表示普通的coord，$\tilde{c}$表示natural coord，D表示stride.
+\end{mycomment}
 
 \subsection{Tensor}
 最后我们定义tensor，它是 CUTE 的核心对象，通过将layout与accessor绑定而得到。accessor本质上是一个支持随机访问的、类似指针的对象，用于layout。
@@ -698,7 +713,7 @@ T(c) = (e \circ L)(c) = \ast(e + L(c)) = e[L(c)], \tag{9}
 \]
 即给出tensor在coord \(c\) 处的值。
 \end{definition}
-大多数tensor是data layouts，使用内存地址作为accessor。例如，内存地址 \(p\) 可以作为指针accessor \(\{p\}\)，配合常规的偏移和解引用操作来构造data tensor：
+大多数tensor是data layouts，使用内存地址作为accessor。例如，内存地址 \(p\) 可以作为pointer accessor \(\{p\}\)，配合常规的偏移和解引用操作来构造data tensor：
 \begin{align*}
 \{p\} + b &\to \{p + b\},\\
 \ast\{p\} &\to \ast p,\\
@@ -763,9 +778,9 @@ thr_data = thr_tile_data[None, thr_id]  # TILE_SIZE
 \subsection{Applications}
 CUTE 为一组layout提供了紧凑的表示，这组layout严格大于传统flat shapes and strides所能表示的layout。相比之下，像 CUTLASS v2 和 Thunderkittens这样的库需要逐一手动实现每种layout。这种方法劳动强度大、容易出错，并且需要大量的开发时间。为了说明其复杂性，CUTLASS v2 代码库包含近 300 个独立实现的layout，分布在 87 个文件中，总计约 55,000 行代码。此外，CUTLASS v2 中的许多算法仅设计用于这些layout的一个有限子集，这加剧了维护和可扩展性的挑战。相比之下，CUTE 的core layouts表示及其相关的algebra for manipulating layouts仅需 3,000 行代码，并且能够表示 CUTLASS v2 中所有 300 种layouts以及更多。用 CUTE 实现的算法可以对其输入的rank或shape施加约束，但仍然与满足这些前提条件的任何layout兼容。这种将算法逻辑与特定数据或线程layout解耦的方式带来了更灵活和可组合的代码。
 
-上述优势已得到认可，CuTE 现在构成了 CUTLASS v3、CUTLASS v4 和 CuTe DSL 的基础，这些库都构建在 CuTE 的核心layout representation and algebra之上。现代tensor instructions所需的复杂data layouts和partitioning patterns，可以通过 CuTE 单一、一致且可组合的表示来进行表示和操作，这种表示在 NVIDIA 指令集架构的多个代际中表现稳健。
+上述优势已得到认可，CuTE 现在构成了 CUTLASS v3、CUTLASS v4 和 CuTe DSL 的基础，这些库都构建在 CuTE 的核心layout representation and algebra之上。现代tensor instructions所需的复杂data layouts和partitioning patterns，可以通过 CuTE 单一、一致且可组合的表示来进行表示和操作，这种表示在 NVIDIA ISA的多个代际中表现稳健。
 
-在本节中，我们将详细说明仅使用layout和tensor表示为两个最基本的算法（COPY 和 GEMM）提供强大的通用实现。这些算法使用 CuTE tensors实现，并用于说明逻辑实现可适用于广泛的应用。尽管这些算法本身通常是最优的，但它们可以作为优化版本的通用参考实现。第 3 节中的layout algebra提供了检查和操作layouts以执行这些优化的方法。
+在本节中，我们将详细说明仅使用layout和tensorrepresentation为两个最基本的算法（COPY 和 GEMM）提供强大的通用实现。这些算法使用 CuTE tensors实现，并用于说明逻辑实现可适用于广泛的应用。尽管这些算法本身通常是最优的，但它们可以作为优化版本的通用参考实现。第 3 节中的layout algebra提供了检查和操作layouts以执行这些优化的方法。
 
 \subsubsection{COPY}
 使用 CuTE 张量编写的通用 COPY 算法如下：
@@ -793,7 +808,7 @@ copy(Tensor<TS,SLayout> const& src,   // N
 \end{figure}
 任意rank的tensor都可以复制到任意其他rank的tensor。从这个意义上说，无论参数的rank是多少，COPY 都是一个rank为 1 的算法。这是秩无关编程（rank-agnostic programming）的一种体现。
 
-当source and destination tensors的 idx2crd 函数计算成本较低时（例如，当张量shape在编译时静态已知时），上述实现实际上从不生成动态的coord transformations。在这种情况下，循环可以被展开，idx2crd 可以静态地应用于循环索引 \( i \)，并且内积（inner\_product）计算在计算offsets时产生的开销极小。这是静态分析和优化的一种形式，因为layout的shape,stride通常在编译时已知并且对编译器可见。如果 idx2crd 确实产生了运行时开销，所提供的实现仍然可以作为鲁棒的参考实现，用于验证那些可能进一步检查定义域并使用第 3 节所述操作变换layouts的优化版本。
+当source and destination tensors的 idx2crd 函数计算成本较低时（例如，当张量shape在编译时静态已知时），上述实现实际上从不生成动态的coord transformations。在这种情况下，循环可以被展开，idx2crd 可以静态地应用于循环索引 \( i \)，并且内积（inner\_product）计算在计算offsets时产生的开销极小（即将原本需要在每个元素上执行的昂贵计算（除法、模运算、分支）提前到编译时完成，使运行时只剩下最少的整数运算。）。这是静态分析和优化的一种形式，因为layout的shape,stride通常在编译时已知并且对编译器可见。如果 idx2crd 确实产生了运行时开销，所提供的实现仍然可以作为鲁棒的参考实现，用于验证那些可能进一步检查定义域并使用第 3 节所述操作变换layouts的优化版本。
 
 \subsubsection{GEMM}
 使用 CuTE 张量编写的通用 GEMM 算法如下：
@@ -831,10 +846,742 @@ gemm(Tensor<TA,ALayout> const& A,   // (M,K)
 \end{figure}
 通过抽象化fused-multiply-add并提供足够强大的tiling工具，该算法可以在体系结构层次结构的每一层递归地进行调整和应用。
 
-
-
-
 \section{Layout Algebra}
+虽然CUTe Layout只是所有可能函数空间的一个子集，但它们能够表示比传统库（如BLAS、torch.tensor和numpy.ndarray）中的flat shape and stride表示严格更大的一类layout function。
+
+除了表示能力之外，CUTe layout的一个关键效用在于它们能够被操作和组合以创建新的layout。这是通过对layout定义的一组核心algebraic operaitons实现的，这些操作还可用于构建更高级别的操作。
+
+在本节中，我们定义layout homomorphsims——即接受CuTe layout并生成满足某些函数性质的新CuTe layout的操作。
+\subsection{Concatenate}
+一个layout可以表示为其sublayout的concatenate，
+
+\[
+\begin{aligned}
+    \mathbf{L} = S : D \\
+= (S_0, S_1, \ldots, S_n) : (D_0, D_1, \ldots, D_n) \\
+= (S_0 : D_0, S_1 : D_1, \ldots, S_n : D_n) \\
+= (\mathbf{L}_0, \mathbf{L}_1, \ldots, \mathbf{L}_n)
+\end{aligned}
+\]
+
+使得
+
+\[
+\forall c = (c_0, c_1, \ldots, c_n) \in \mathbb{Z}(\mathbf{L}), \quad \mathbf{L}(c) = \mathbf{L}_0(c_0) + \mathbf{L}_1(c_1) + \cdots + \mathbf{L}_n(c_n).  \tag{11}
+\]
+
+对于concatenate的admissibility，函数性质（11）意味着所有sublayout的codomain必须包含在同一个integer-semimodule中。例如，任何具有integer stride的两个layout都可以concatenate，但layout \( 4 : 2 \) 和 \( 3 : e_0 \) 不能concatenate。
+
+注意到layout的每个sublayout也是一个layout，观察到一个有用的性质：任何操作layout的algebraic operation也可以应用于任意单个sublayout。我们通常称这些为“by-mode operations”，本节定义的每个operation（concatenate、composition、complement、logical divide等）也可以按mode为单位进行应用。这种方法用组合子表示：
+
+\[
+\mathbf{A} * \langle \mathbf{B}, \mathbf{C} \rangle = (\mathbf{A}_0, \mathbf{A}_1) * \langle \mathbf{B}, \mathbf{C} \rangle = (\mathbf{A}_0 * \mathbf{B}, \mathbf{A}_1 * \mathbf{C}), \tag{12}
+\]
+
+其中 \( * \) 是某个对两个layout的操作，而 \( \langle \cdot \rangle \) 表示a tuple of layout，以区别于layout的concatenation。
+
+\subsection{Coalesce}
+给定layout \( \mathbf{A} \)，coalesce后的layout \( \mathbf{R} \) 满足：
+
+\begin{itemize}
+\item Consistent integral domain：\( |\mathbf{R}| = |\mathbf{A}|, \)  \hfill (13)
+\item Flattened or integral shape：\( \text{depth}(\mathbf{R}) \leq 1, \)  \hfill (14)
+\item Consistent integral evaluation： \( \forall c \in \mathbb{Z}_{|\mathbf{A}|}, \quad \mathbf{R}(c) = \mathbf{A}(c).\)  \hfill (15)
+\end{itemize}
+
+coalesce操作通过将layout \( \mathbf{A} \) 视为整数上的函数，并可能将其形状折叠到更浅的表示，从而“简化”布局 \( \mathbf{A} \)。虽然这个过程可能会移除rank和层次信息、修改coord sets并合并 \( \mathbf{A} \) 的多个mode，但它保证了coalesce前后的两个layout在integral coords上是保持等价的。
+
+在实践中，当我们提到coalesced layout时，通常是指达到最小rank的coalesced layout。
+
+例如，\( (2, (1, 6)) : (1, (6, 2)) \) 的coalesced layout是 \( 12 : 1 \)。或者，可以使用式（12）对该Layout进行coalesce by-mode，即对每个mode独立应用合并：
+\[
+\begin{aligned}
+\text{coalesce}((2, (1, 6))) & : (1, (6, 2)), \quad \langle *, * \rangle) = \text{coalesce}((2 : 1, (1, 6)) : (6, 2)), \quad \langle *, * \rangle) \\
+& = (\text{coalesce}(2 : 1, *), \text{coalesce}((1, 6) : (6, 2)), *) \\
+& = (\text{coalesce}(2 : 1), \text{coalesce}((1, 6) : (6, 2))) \\
+& = (2 : 1, 6 : 2) \\
+& = (2, 6) : (1, 2).
+\end{aligned}
+\]
+
+类似地，rank-2 layout \( ((4, 3), 5) : ((15, 1), 3) \) 合并为 \( (4, 15) : (15, 1) \)，而按模合并后的布局仍是 \( ((4, 3), 5) : ((15, 1), 3) \)，因为row和col layouts各自coalesce时保持不变。rank-2布局 \( (4, (3, 5)), (15, (1, 3)) \) 也合并为 \( (4, 15) : (15, 1) \)，coalesec by-mode后的layout是 \( (4, 15) : (15, 1) \)，因为第二个mode可以单独合并为 \( 15 : 1 \)。
+
+\subsection{Composition}
+
+给定layout \(\mathbf{A}\) 和 \(\mathbf{B}\)，the group composition layout \(\mathbf{R} = \mathbf{A}\circ \mathbf{B}\) 满足：
+\[
+\begin{array}{r l r l r l}
+& \text{domain compatibility：} & & \mathbf{B}\preceq \mathbf{R}, & & \text{(16)} \\
+& \text{Functional composition：} & & \forall c\in \mathbb{Z}(\mathbf{B}),\ \mathbf{R}(c) = \mathbf{A}(\mathbf{B}(c)). & & \text{(17)}
+\end{array}
+\]
+在此表述中，\(\mathbf{B}\) 通过定义 \(\mathbf{R}\) 的domain来确定结果layout的shape和coord sets，而 \(\mathbf{A}\) 确定 \(\mathbf{R}\) 的codomain。compatibility保证了 \(\mathbf{B}\) 的所有coords也可用作 \(\mathbf{R}\) 的coords。为使group和functional composition都满足admissibility，\(\mathbf{B}\) 的codomain必须与 \(\mathbf{A}\) 的domain是compatible，这通常意味着 \(\mathbf{B}\) 的codomain是与 \(\mathbb{Z}(\mathbf{A})\) 中某个coord sets同余的coord sets。
+
+\subsubsection{Composition Properties}
+\textbf{Identity Layouts}。对于任意shape \(S\)，identity layouts \(\mathbf{I}_S\) 满足：
+\[
+\forall c\in \mathbb{Z}_S,\ \mathbf{I}_S(c) = c.
+\]
+注意 \(\mathbf{I}_S\) 实际上可以取任意shape \(P\)，只要 \(S\preceq P\)。例如，以下都是 \(\mathbf{I}_{24}\)，且对所有 \(i\in\mathbb{Z}_{24}\) 满足 \(\mathbf{L}(i)=i\)：
+\[
+24:1,\quad (4,6):(1,4),\quad (3,(4,2)):(1,(3,12)).
+\]
+同样，以下都是 \(\mathbf{I}_{(4,6)}\)，且对所有 \((i,j)\in\mathbb{Z}_{(4,6)}\) 满足 \(\mathbf{L}(i,j)=(i,j)\)：
+\[
+(4,6):(e_0,e_1),\quad (4,(3,2)):(e_0,(e_1,3e_1)).
+\]
+对于codomain为 \(\mathbb{Z}_D\) 的layout \(\mathbf{B}\)，任何 \(\mathbf{I}_D\) 都是a group composition left identity：
+\[
+\mathbf{I}_D\circ \mathbf{B} = \mathbf{B}.
+\]
+对于domain为 \(\mathbb{Z}_S\) 的layout \(\mathbf{A}\)，shape为 \(S\) 的layout \(\mathbf{I}_S\) 是a group composition right identity：
+\[
+\mathbf{A}\circ \mathbf{I}_S = \mathbf{A}.
+\]
+
+\textbf{Associative Property}。给定layouts \(\mathbf{A}\)、\(\mathbf{B}\)、\(\mathbf{C}\)，且满足条件
+\[
+\mathrm{image}(\mathbf{C})\subseteq \mathbb{Z}(\mathbf{B})\quad \text{和}\quad \mathrm{image}(\mathbf{B})\subseteq \mathbb{Z}(\mathbf{A}), \qquad \text{(18)}
+\]
+则
+\[
+\mathbf{A}\circ (\mathbf{B}\circ \mathbf{C}) = (\mathbf{A}\circ \mathbf{B})\circ \mathbf{C}.
+\]
+注意，当式 (18) 不满足时，composition往往仍然可能，但associativity可能失效。例如，
+\[
+(5,3):(1,7)\circ [4:1\circ 2:5] = 2:7,\qquad
+[(5,3):(1,7)\circ 4:1]\circ 2:5 = 4:1\circ 2:5
+\]
+结果不同，因为 \(2:5\) 的range不包含在 \(4:1\) 的domain中。然而，利用 `idx2crd` 和 `inner\_product` 的越界行为，两种表达式都能正常求值。
+\subsubsection{Evaluation and Restrictions}
+group composition的求值可由式 (4) 和式 (6) 中的layout evaluation操作构造性推导出。本节确定Layout \(\mathbf{A}\) 和 \(\mathbf{B}\) 成功计算group composition所需的一组admissibility conditions。
+
+首先，要求 \(\mathbf{A}\) 和 \(\mathbf{B}\) functional compatibility：\(\mathbf{B}\) 的codomain必须与 \(\mathbf{A}\) 的shape是弱同余的。最常见的情况是 \(\mathbf{B}\) 的codomain是整数，而所有layouts \(\mathbf{A}\) 都接受integral coords，因此funtional compatible。更一般地，当 \(\mathbf{B}\) 产生coords时，这些coords必须与 \(\mathbb{Z}(\mathbf{A})\) 中的某个coord set同余。
+
+一种通用方法是将 \((\mathbf{A}\circ \mathbf{B})(i)\) 与 \(\mathbf{R}(i)\) 的求值等同起来。实践中，我们只需分析最简单的情形base case \(\mathbf{B}=s:d\)，然后将其他求值归约到该情形。
+
+\textbf{Base Case}。令 \(\mathbf{B}=s:d\)，其中 \(s\in\mathbb{Z}^+\)，\(d\in\mathbb{N}\)。令 \(\mathbf{A}=S:D=(S_0,S_1,\ldots,S_R):(D_0,D_1,\ldots,D_R)\) 是一个layout，其中 \(S_r\in\mathbb{Z}^+\)，\(D_r\in\mathcal{D}\)。定义 \(S=(S_0,S_1,\ldots,S_R)\) 的exclusive prefix-product为
+\[
+\overline{S}_r = \prod_{k=0}^{r-1} S_k.
+\]
+则对每个 \(i=0,1,\ldots,s-1\)，复合 \(\mathbf{R}=\mathbf{A}\circ \mathbf{B}\) 的求值为：
+\[
+\begin{aligned}
+\mathbf{R}(i) &= (\mathbf{A}\circ \mathbf{B})(i) = (D\circ S\circ d\circ s)(i) \\
+&= D(S(d(s(i)))) \\
+&= \mathrm{inner\_product}(\mathrm{idx2crd}_S(\mathrm{inner\_product}(\mathrm{idx2crd}_s(i),d)), D) \\
+&= \mathrm{inner\_product}(\mathrm{idx2crd}_S(\mathrm{inner\_product}(i,d)), D) \\
+&= \mathrm{inner\_product}(\mathrm{idx2crd}_S(i\cdot d), D) \\
+&= \sum_{r=0}^{R-1} \left( \left\lfloor \frac{i\cdot d}{\overline{S}_r} \right\rfloor \bmod S_r \right) \cdot D_r
+      + \left\lfloor \frac{i\cdot d}{\overline{S}_R} \right\rfloor \cdot D_R \\
+&= \sum_{r=0}^{R-1} \left( \left\lfloor \frac{i}{\overline{S}_r'} \right\rfloor \bmod S_r' \right) \cdot D_r'
+      + \left\lfloor \frac{i}{\overline{S}_R'} \right\rfloor \cdot D_R'.
+\end{aligned}
+\qquad \text{(19)}
+\]
+结果 \(\mathbf{R}\)（若存在）定义为 layout \(\mathbf{R}=S':D'=(S_0',S_1',\ldots,S_R'):(D_0',D_1',\ldots,D_R')\)。目标是确定 \(S',D'\) 及其存在的条件。
+
+首先，因为 \(\mathbf{B}\) 的codomain是整数，可以假定layout \(\mathbf{A}\) 已经合并（coalesce）。根据定义，这不改变composition的求值。
+
+其次，如果 \((s-1)\cdot d < \overline{S}_r\)，则对所有 \(i<s\) 和 \(q>r\) 有 \(\lfloor i\cdot d / \overline{S}_q\rfloor = 0\)。也就是说，\(\mathbf{A}\) 中所有 \(q>r\) 的mode对结果没有贡献。不失一般性，我们假设 \((s-1)\cdot d \ge \overline{S}_R\)，这可以通过截断或扩展 \(\mathbf{A}\) 的shape实现。该假设不改变式 (19)，但简化了分析，消除了冗余情形。
+
+我们引入stride divisibility condition:
+\[
+\overline{S}_r \mid d \quad \text{或} \quad d \mid \overline{S}_r \quad \text{对每个 } r=0,\ldots,R, \qquad \text{(20)}
+\]
+并定义
+\[
+\delta_r = \left\lceil \frac{d}{\overline{S}_r} \right\rceil,\quad \rho_r = \left\lceil \frac{\overline{S}_r}{d} \right\rceil.
+\]
+那么
+\[
+\sum_{r=0}^{R-1} \left( \left\lfloor \frac{i\cdot d}{\overline{S}_r} \right\rfloor \bmod S_r \right) D_r
+   + \left\lfloor \frac{i\cdot d}{\overline{S}_R} \right\rfloor D_R
+= \sum_{r=0}^{R-1} \left( \left\lfloor i\cdot \frac{\delta_r}{\rho_r} \right\rfloor \bmod S_r \right) D_r
+   + \left\lfloor i\cdot \frac{\delta_R}{\rho_R} \right\rfloor D_R.
+\]
+利用恒等式 \((ab)\bmod (nb) = (a\bmod n)\cdot b\)，并注意到 \(\delta_r \mid S_r\)，可得：
+\[
+= \sum_{r=0}^{R-1} \left( \left\lfloor i\cdot \frac{1}{\rho_r} \right\rfloor \bmod \frac{S_r}{\delta_r} \right) (D_r\cdot \delta_r)
+   + \left\lfloor i\cdot \frac{1}{\rho_R} \right\rfloor (D_R\cdot \delta_R).
+\]
+一旦验证
+\[
+\rho_r = \left\lceil \frac{\overline{S}_r}{d} \right\rceil
+      = \left\lceil \frac{\prod_{k=0}^{r-1} S_k}{d} \right\rceil
+      = \left\lceil \frac{S_0}{d} \right\rceil \left\lceil \frac{\prod_{k=1}^{r-1} S_k}{\lceil d/S_0\rceil} \right\rceil
+      = \dots = \prod_{k=0}^{r-1} \left\lceil \frac{S_k}{\delta_k} \right\rceil = \overline{S}_r',
+\]
+则结果shape和stride可识别为
+\[
+S_r' = \frac{S_r}{\delta_r},\qquad D_r' = D_r\cdot \delta_r.
+\]
+
+为了满足相容性条件 (16)，shape还必须满足 \(|S'| = S'_{R+1} = s\)。为此，我们进一步引入\textbf{shape divisibility conditions}：
+
+\[
+\left\lceil \frac{S_r}{d} \right\rceil \text{ 对每个 } r = 0, \ldots, R \text{ 都整除 } s, \tag{21}
+\]
+
+并修改shape为
+
+\[
+\begin{aligned}
+S_r' &= \frac{S_r}{\delta_r}, \quad S'_R = \frac{s}{\rho_R}, \\
+D_r' &= D_r \cdot \delta_r,
+\end{aligned}
+\]
+
+其中term \( s / \rho_R \) 用于将结果shape截断或扩展至大小 \( s \)。
+
+因此，只要 \(\mathbf{A}\) 和 \(\mathbf{B}\) 满足stride divisibility condition (20) 和shape divisibility condition (21)，我们就计算出了结果 \(\mathbf{R} = S' : D'\) 的shape和stride。
+
+\textbf{Reductive Case：Distributive}。为了用base case表达更一般的compositions，我们使用一个在compositions时对 \(\mathbf{B}\) 的sublayouts拼接的distributive property，
+
+\[
+\mathbf{A} \circ \mathbf{B} = \mathbf{A} \circ (\mathbf{B}_0, \mathbf{B}_1, \ldots) = (\mathbf{A} \circ \mathbf{B}_0, \mathbf{A} \circ \mathbf{B}_1, \ldots).  \tag{22}
+\]
+
+当 \(\mathbf{A}\) 的shape \(S\) 对 \(\mathbf{B}\) 的sublayout的和可分配时，上式成立：
+
+\[
+\begin{aligned}
+(\mathbf{A} \circ \mathbf{B})(c) &= D(S(\mathbf{B}(c))) \\
+&= D(S(\mathbf{B}_0(c_0) + \mathbf{B}_1(c_1) + \cdots)) \\
+&= D(S(\mathbf{B}_0(c_0)) + S(\mathbf{B}_1(c_1)) + \cdots) \\
+&= D(S(\mathbf{B}_0(c_0))) + D(S(\mathbf{B}_1(c_1))) + \cdots \\
+&= (\mathbf{A} \circ \mathbf{B}_0, \mathbf{A} \circ \mathbf{B}_1, \ldots)(c)
+\end{aligned}  \tag{23}
+\]
+
+以下两个条件中的任何一个都足以满足式 (23)：
+
+\begin{itemize}
+\item \(\mathbf{B}\) 的dodomain与shape \(S\) 同余。此时，\(S\) 的应用是恒等变换，因此可分配。
+\item 当 \(S\) 不是恒等变换时，必须满足
+\[
+\left\lfloor \frac{\sum_i c_i \cdot d_i}{\overline{S}_r} \right\rfloor \bmod S_r = \sum_i \left\lfloor \frac{c_i \cdot d_i}{\overline{S}_r} \right\rfloor \bmod S_r \quad \text{对每个 } r = 0, \ldots, R-1,
+\]
+这发生在：
+\begin{enumerate}
+\item 所有base sublayouts的stride \(d_i\) 满足stride divisibility condition (20)，且
+\item 所有base sublayouts \(s_i : d_i\) 具有互不相交的像：
+\[
+\forall i, j,\quad s_i \cdot d_i \le d_j \ \text{或}\ s_j \cdot d_j \le d_i .
+\]
+\end{enumerate}
+\end{itemize}
+
+\textbf{Reductive Case：Coordinate}。当 \(\mathbf{B}\) 产生coord时，这些坐标必须与 \(\mathbb{Z}(\mathbf{A})\) 中的某个coord同余，并且 \(\mathbf{B}\) 的每个stride必须是coord integer-semimodule的一个scaled basis element:\(d = a \cdot e_i \in \mathbb{Z}^{S'}\)，其中 \(S' \preceq \mathbf{A}\)。当这些条件满足时，我们有
+
+\[
+\mathbf{A} \circ \mathbf{B} = \mathbf{A} \circ (a \cdot e_i) \circ s = \mathbf{A}_i \circ a \circ s = \mathbf{A}_i \circ \mathbf{B}',
+\]
+
+这又回到了base case，其中 \(\mathbf{B}' = s : a\) 是一个rank为1、depth为0且codomain为整数的layout。对于具有其他integer-semimodule sride的 \(\mathbf{B}\)，必须特别小心地将 \(\mathbf{B}\) 的codomain映射到 \(\mathbf{A}\) 的domain，并且可能需要对 \(\mathbf{A}\) 和 \(\mathbf{B}\) 施加额外的限制。
+
+\subsubsection{Intuition and Divisibility}
+当左侧layouts \(\mathbf{A}\) 的秩为 1 时，compositions是trivial的，因为式 (19) 中不出现 \(S_R\)：
+\[
+(S_0) : (D_0) \circ s : d = s : D_0 \cdot d.
+\]
+在这种情况下，没有non-trivial divisibility checks，因为 \(R = 0\)，\(\bar{S}_0 = 1\)，\(\delta_0 = d\)，且 \(\rho_0 = 1\)。注意，这意味着即使 \(\mathrm{image}(\mathbf{B}) \not\subseteq \mathbb{Z}(\mathbf{A})\)，group composition仍然可能：
+\[
+7 : 11 \circ 3 : 4 = 3 : 44,
+\]
+并且 \(\mathbf{B}\) 不需要互不相交就能满足分配律(distributive)：
+\[
+7 : 11 \circ (3,5) : (6,3) = (3,5) : (66,33).
+\]
+
+对于 \(\mathbf{A}\) 的rank更大的layout，直观的策略包括两个步骤：
+\begin{itemize}
+\item 通过从 \(\mathbf{A}\) 中“dividing out”前 \(d\) 个元素，确定一个产生 \(\mathbf{A}\) 中每隔 \(d\) 个元素的intermediate layout。
+\item 通过“keeping”前 \(s\) 个元素，将intermediate strided layout的大小固定为 \(s\)。
+\end{itemize}
+
+例如，
+\[
+(4,6,8,10) : (2,3,5,7) \circ 6 : 12 = (1,2,8,10) : (X,9,5,7) \circ 6 : 1,
+\]
+其中 \(\mathbf{A}\) 的前 12 个元素被“divided out”，stride被相应缩放。然后，修改后layout的前 6 个元素被“kept”，得到：
+\[
+(1,2,8,10) : (X,9,5,7) \circ 6 : 1 = (2,3) : (9,5).
+\]
+或者，我们可以先“keep”前 \(6 \cdot 12\) 个元素，然后再“divide out”前 12 个元素，如下所示：
+\[
+(4,6,8,10) : (2,3,5,7) \circ 6 : 12 = (4,6,3) : (2,3,5) \circ 6 : 12 = (2,3) : (9,5).
+\]
+divisibility conditions确保了“divide out”和“keep”步骤中的逐次除法总能产生integers for resulting shape。
+
+\paragraph{Violations of Divisibility Conditions}
+某些compositions会违反stride或shape的divisibility conditions。例如，
+\[
+(4,6,8) : (2,3,5) \circ 6 : 3
+\]
+违反了stride divisibility conditions (20)，因为 \(\bar{S}_1 = 4\) 与 \(d = 3\) 不整除。不存在能表示layout \((4,6,8) : (2,3,5)\) 中每隔 3 个元素的layout。
+
+类似地，composition
+\[
+(4,6,8) : (2,3,5) \circ 6 : 1
+\]
+违反了shape divisibility conditions (21)，因为 \(\left\lceil \frac{\bar{S}_1}{d} \right\rceil = \left\lceil \frac{4}{1} \right\rceil = 4\) 不能整除 \(s = 6\)。不存在能表示layout \((4,6,8) : (2,3,5)\) 中前 6 个元素的layout。
+
+最终，这意味着 CuTE layout在group composition下并不严格封闭。然而在实践中，违反divisibility conditions的情况往往源于概念性应用错误、布局/硬件不兼容、编程错误等。这些错误通常可以在编译时被捕获，从而有助于程序安全性和开发效率。
+
+\paragraph{Apparent Violations}
+考虑composition
+\[
+(4,2,8) : (3,12,97) \circ 3 : 3,
+\]
+表面上违反了stride divisibility conditions，因为 \(\bar{S}_1 = 4\) 与 \(d = 3\) 不整除。这个问题可以通过coalescing \(\mathbf{A}\)（如第 3.3.2 节所述）并截断 \(\mathbf{A}\)（如 \((s-1) \cdot d < \bar{S}_r\) 情形所述）来解决。等价composition产生结果：
+\[
+(4,2,8) : (3,12,97) \circ 3 : 3 = (8,8) : (3,97) \circ 3 : 3 = (8) : (3) \circ 3 : 3 = 3 : 9.
+\]
+然而，以下composition无法满足divisibility conditions：
+\[
+(4,2,8) : (3,12,97) \circ 4 : 3 \qquad (4,2,8) : (3,15,97) \circ 3 : 3.
+\]
+左边的例子不能充分截断，而右边的例子无法通过coalescing解决。
+\subsubsection{Application: Partitioning Example}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig6.png}
+    \label{fig:example}
+\end{figure}
+Composition是 CuTE layout algebra的心脏，支持诸如reshaping、 restriding、permuting、partitioning、tiling和extracting sublayouts等操作。本节演示如何利用composition，通过任意的thread-value pattern对data tensor进行partitioning。
+
+考虑一个shape为 \((8,8)\) 的data。我们希望使用Fig6 所示的thread-value pattern来partition这些数据，该pattern是特定 Ampere Tensor Core 的逻辑划分模式。此指令的thread-value paritioning pattern可以用layout
+
+\[
+\text{ThrValLayoutC: } ((4,8),2):((16,1),8)
+\]
+表示，该layout将 \((\text{thread\_idx}, \text{value\_idx})\) 映射到 \(8\times8\) 矩阵内的一维coord。如图 6 所示，为了便于人类理解，实际上绘制的是逆映射——它显示了从 \(8\times8\) 矩阵内的二维coord到 \((\text{thread\_idx}, \text{value\_idx})\) 对的映射。这个 ThrValLayoutC 被视为 Ampere Tensor Core 指令的静态元数据——它是指令和硬件功能的固有属性，在 CuTE 之前，仅能通过类似Fig 6 的图像在指令集架构 (ISA) 中描述。
+
+任何 \(8\times8\) data layout都可以通过与thread-value ThrValLayoutC composition来进行permuting。每次composition产生一个与shape \((32,2)\) compatible的layout，并定义 \((\text{thread\_idx}, \text{value\_idx})\) 与data offsets之间的映射。例如，Tab 4 展示了data layouts通过上述 ThrValLayoutC 进行trasformation via composition的示例。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab4.png}
+    \label{fig:example}
+\end{figure}
+
+以下代码演示了使用thread-value partitioning的常见pattern：
+
+\begin{lstlisting}[language=C++]
+smem_data = Tensor(MyAccessor, MyLayout8x8)   # 张量: 坐标 -> 偏移
+tv_layout = Layout(((4,8),2), ((16,1),8))    # TV 布局: (Thr, Val) -> 坐标
+smem_tv   = composition(smem_data, tv_layout) # 复合: (Thr, Val) -> 偏移
+smem_v    = smem_tv[thr_id, None]            # 按线程切片得到子张量
+copy(smem_v, rmem_data)                      # 复制到寄存器张量/数组
+\end{lstlisting}
+这种模式在 SIMD 编程中极为常见，每个处理单元都获得父数据的symmetric partition。一般而言，CuTE 认为arbitrary partitioning都可以定义为composition（permutation and/or reshaping）后接slicing。如第 2.5.1 节所述，这种“compose-and-slice”模式将partitioning pattern（ThrValLayoutC）与实际切出的slice of data（带有 thr\_id 的slice）分离开来。由于partitioning pattern通常是编译时元数据（与指令或优化参数相关），而slice通常是运行时程序标识索引，这种模式更能够传播静态信息并减少运行时开销。
+
+\subsubsection{By-mode Composition and Tilers}
+group composition可以by-mode应用，从而能够对layout的subdomains进行操作。例如，通常希望独立地对矩阵的行和列分别应用composition。我们使用式 (12) 中的组合子，其中 \(\star\) 运算符视为group composition \(\circ\)，以将各个composition应用到layout的独立sublayout上。
+
+我们将式 (12) 中的布局元组称为分块器（Tiler）。
+
+\begin{definition}[Tiler]
+\textbf{Tiler}是一个 \(\mathrm{HTuple}(\text{Tile})\)，其中每个 Tile 是：
+\begin{itemize}
+\item 一个\textbf{Layout} \(S : D\)，或
+\item 一个\textbf{Integer} \(S\)，等价地视为layout \(S : 1\)。
+\end{itemize}
+\end{definition}
+
+这个定义意味着所有layouts都是tilers，所有整数也是tilers，并且允许像 \((4,8)\) 这样的shape用作tiler。Fig 7a 展示了这种常见情况，其中shape作为方便的tiler，用于提取和处理sublayout。
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig7.png}
+    \label{fig:example}
+\end{figure}
+
+Fig 7 说明了如何通过composition将tiler应用于任意layout。该图取一个与shape \((8,16)\) compatible的任意布局，并应用各种tilers从列和行中独立提取元素，从而产生与shape \((4,8)\) compatible的sublayout。例如，tiler \((4:1,8:1)\) 从每列提取前 4 个元素，从每行提取前 8 个元素，得到与shape \((4,8)\) compatible的sublayout。
+
+此外，tiler的composition与coord layouts的compoaition之间存在等价关系。对于layout \(\mathbf{L} = (M,N) : (X,Y)\) 和tilers \(\mathbf{T} = \langle \mathbf{T}_0, \mathbf{T}_1 \rangle\)，我们有
+
+\[
+\mathbf{L} \circ \mathbf{T} \equiv \mathbf{L} \circ (M,N) : (e_0, e_1) \circ \mathbf{T}
+\]
+
+这意味着 \((M,N) : (e_0, e_1) \circ \mathbf{T}\) 对 \(\mathbf{L}\) 的作用与 \(\mathbf{T}\) 相同。这里，\((M,N) : (e_0, e_1)\) 是一个identity layout，将其二维natural coord映射到二维coord。这种tilers的表述巩固了“shape可视为从coord到natural coord的映射”这一概念（如第 2.4 节layout定义中所用）。具体地，在composition中使用时，以下所有对象应视为等价：
+
+\[
+(4,8) \equiv \langle 4,8 \rangle \equiv (4:1,8:1) \equiv (4,8) : (e_0, e_1)
+\]
+\subsection{Inverse}
+Layout可以是单射、满射或双射的，并且可以具有右逆、左逆、全逆和拟逆。当Layout被解释为从coords到offsets的函数时，inverse layouts可以被解释为从offsets到coords的函数。Layout inverses在确定某个layout内哪些offset存在、提取特定offsets的组，或者确定两个单独layout的公共sublayout时非常有用。
+
+在本节中，我们定义layout的广义left-inverses和right-inverses，并提供其使用的应用示例。
+\subsubsection{Right-Inverse}
+Layout \( \mathbf{L} : \mathbb{Z}_{|\mathbf{L}|} \to \mathcal{D} \) 的\textit{right-(psuedo) inverse}是一个单射layout \( \mathbf{L}^{\dagger} : \mathcal{D}_{\mathbf{L}^{\dagger}} \to \mathbb{Z}_{|\mathbf{L}|} \)，满足
+\[ \forall k \in \mathcal{D}_{\mathbf{L}^{\dagger}}, \quad \mathbf{L}^{\dagger}(\mathbf{L}(\mathbf{L}^{\dagger}(k))) = \mathbf{L}^{\dagger}(k) \tag{24} \]
+
+上述一般定义在 \( \mathbf{L} \) 具有一般integer-semimodule codomain \( \mathcal{D} \) 时，对确定 \( \mathbf{L}^{\dagger} \) 的性质很有用。在常见情况 \( \mathcal{D} = \mathbb{Z} \) 下，我们恢复经典的right-inverse定义：
+\[ \forall k \in \mathbb{Z}_{|\mathbf{L}^{\dagger}|}, \quad \mathbf{L}(\mathbf{L}^{\dagger}(k)) = k, \]
+但对于更一般的codomain如 \( \mathcal{D} = \mathbb{Z}^{(*,*)} \)，从 (24) 可以得出 \( \mathcal{D} \lesssim \mathbf{L}^{\dagger} \)，即right-inverse的domain粗化了 \( \mathbf{L} \) 的codomain，使其能够接受来自 \( \mathbf{L} \) 的offset.
+
+如果layout \( \mathbf{L} \) 有一个right-inverse layout \( \mathbf{L}^{\dagger} \)，则 \( |\mathbf{L}^{\dagger}| \leq |\mathbf{L}| \)。在实践中，当引用layout的right-inverse时，通常指的是具有最大尺寸的right-inverse。例如，Fig 3 和Fig 4 中layout的最大尺寸right-inverse如Tab 5 所示。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab5.png}
+    \label{fig:example}
+\end{figure}
+
+当layout \( \mathbf{L} \) 是 \( \mathbb{Z}_{|\mathbf{L}|} \) 上的双射时，right-inverse同时也是layout \( \mathbf{L} \) 的\textit{inverse} \( \mathbf{L}^{-1} \)，满足
+\[ \forall k \in \mathbb{Z}_{|\mathbf{L}|}, \quad \mathbf{L}(\mathbf{L}^{-1}(k)) = k = \mathbf{L}^{-1}(\mathbf{L}(k)) \]
+如果一个layout \( \mathbf{L} \) 具有full-inverse \( \mathbf{L}^{-1} \)，则称该layout是\textit{compact}。
+
+\subsubsection{Application: Vectorization Example}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig8.png}
+    \label{fig:example}
+\end{figure}
+Right-inverses在检查data layout和确定是否存在连续元素及其位置时极为有用。一个直接的例子是，layout \((4, 8) : (1, 4)\) 和 \((4, 8) : (8, 1)\) 的right-inverse分别是 \(32 : 1\) 和 \((8, 4) : (4, 1)\)。这意味着这两个layout的right-inverse大小均为 32，因此它们都索引到 32 个连续的物理元素。
+
+一个更复杂的例子是CuTe 中称为向量化复制（vectorizing-copy）的常见模式试图找出两个tensor之间一次可以复制的最大元素数。right-inverse使 CuTe 能够确定两个layout之间的最大公共sublayout，并且结合有关硬件能力以及指针和stride的物理对齐的额外信息，可以通过代数方法确定可以安全向量化以执行复制的元素数量和位置。
+
+Fig 8 展示了两个向量化的示例。在第一张图 8a 中，source layouts和destination layouts的coord在元素offsets \(k \in \{0, 1\}\) 处匹配，对应coord \(\bar{c} \in \{0, 1\}\)。如果accessor、数据类型和对齐条件允许，复制宽度可以扩展到每条指令处理两个元素。在第二张图 8b 中，source layout和destination layout的coord在元素offsets \(k \in \{0, 1, 2, 3\}\) 处匹配，对应坐标 \(\bar{c} = \{0, 2, 8, 10\}\)。复制宽度可以扩展到每条指令处理四个元素。
+
+一般而言，对于layout \(\mathbf{A} : \mathbb{Z}(\mathbf{A}) \to \mathbb{Z}_\alpha\) 和 \(\mathbf{B} : \mathbb{Z}(\mathbf{B}) \to \mathbb{Z}_\beta\)，且 \(|\mathbf{A}| = |\mathbf{B}|\)，我们希望找到最大的整数 \(K\) 使得coord满足
+\[
+\forall k \in \mathbb{Z}_K, \quad \mathbf{A}^\dagger(k) = \mathbf{B}^\dagger(k)
+\]
+这可以通过寻找 \(K\) 来高效计算，使得
+\[
+\forall k \in \mathbb{Z}_K, \quad k = \mathbf{A}(\mathbf{B}^\dagger(k)) = (\mathbf{A} \circ \mathbf{B}^\dagger)(k) \quad \text{或} \quad \forall k \in \mathbb{Z}_K, \quad k = \mathbf{B}(\mathbf{A}^\dagger(k)) = (\mathbf{B} \circ \mathbf{A}^\dagger)(k)
+\]
+这等价于 \(\mathbf{A} \circ \mathbf{B}^\dagger = (\mathbf{I}_K, \mathbf{X})\) 或 \(\mathbf{B} \circ \mathbf{A}^\dagger = (\mathbf{I}_K, \mathbf{Y})\) 中identity portion（stride-1 mode）的大小。
+
+此外，这些相互连续元素的integral coords由下式给出：
+\[
+\mathbf{A}^\dagger \circ [\mathbf{B} \circ \mathbf{A}^\dagger]_{K} = \mathbf{A}^\dagger \circ \mathbf{I}_K = [\mathbf{A}^\dagger]_{K} : \mathbb{Z}_K \to \mathbb{Z}_{|A|} \\
+\mathbf{B}^\dagger \circ [\mathbf{A} \circ \mathbf{B}^\dagger]_{K} = \mathbf{B}^\dagger \circ \mathbf{I}_K = [\mathbf{B}^\dagger]_{K} : \mathbb{Z}_K \to \mathbb{Z}_{|B|} \tag{25}
+\]
+其中 \([\cdot]_{K}\) 表示truncated-at-size-\(K\) 的操作。该layout给出了数据中前 \(K\) 个物理元素的logical corods，可用于通过logical divide或zipped divide（第 3.5.2 节）从每个tensor中提取公共subvectors。
+
+在实际应用中，考虑第 2.6.1 节中的参考函数 COPY。其实现可以在不改变可观察行为的前提下内部permute the iteration order。permuting the iteration order等价于对source tensor和destination tensor的layout施加一致的permutation。通过选择permutation以匹配式 (25) 中定义的layout，所有连续元素都可以被permutate到第一个mode，从而允许向量化指令进行特殊处理。此外，该过程不仅能检测要向量化的元素是否存在及其位置，还能确定可安全向量化的最大元素数量。这为AutoVectorization提供了框架。
+
+\subsubsection{Left-Inverse}
+Layout \( L : \mathbb{Z}_{|L|} \to \mathcal{D} \) 的\textit{left-(pseudo) inverse}是一个layout \( L^{\dagger} : \mathcal{D}_{L^{\dagger}} \to \mathbb{Z}_{|L|} \)，满足
+\[
+\forall k \in \mathbb{Z}_{|L|}, \quad L(L^{\dagger}(L(k))) = L(k) \tag{26}
+\]
+left inverse可能不唯一，并且对于不在 \( L \) 的image中的输入可以取任意值。上述一般定义在 \( L \) 具有一般integer-semimodule codomain \( \mathcal{D} \) 时，对确定 \( L^{\dagger} \) 的性质很有用。在常见情况 \( L \) 为单射时，我们恢复经典的left-inverse定义：
+\[
+\forall k \in \mathbb{Z}_{|L|}, \quad L^{\dagger}(L(k)) = k.
+\]
+Fig 3 和Fig 4 中layout的left-inverse如Tab 6 所示。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab6.png}
+    \label{fig:example}
+\end{figure}
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig9.png}
+    \label{fig:example}
+\end{figure}
+\subsubsection{Application: Admissibility Example}
+
+left-inverses在确定data layout产生的特定offsets是否存在及其位置时非常有用。
+
+向 Blackwell “tensor memory”（TMEM）加载和存储数据所使用的指令，会以一组预定义的非常具体的offest访问 TMEM，如Fig 9 所示。物理 TMEM 寻址是一个最多包含 512 个col和 128 个lanes的2D grid。图中展示了每条指令在一个warp中的访问模式，但实际上每条指令会使用四个warp，并且上述模式每 32 个lane重复四次。在物理 TMEM 寻址中，striding across the 32-bit cols会使 TMEM 地址增加 1，而striding down the lanes会使 TMEM 地址增加 16384。考虑到物理寻址方式，我们定义一个layout来记录每条指令访问的所有物理offset：
+\begin{table}[htbp]
+\centering
+\caption{TMEM 指令与偏移量映射}
+\label{tab:tmem_instructions}
+\begin{tabular}{l l}
+\toprule
+指令 & (\textit{InstrCOL}, \textit{InstrLANE}) $\to$ TMEM 偏移量 \\
+\midrule
+\texttt{tcgcn05\{ld,st\}.32x32b.x1}   & $(1, 128):(1, 16384)$ \\
+\texttt{tcgcn05\{ld,st\}.32x32b.x2}   & $(2, 128):(1, 16384)$ \\
+\texttt{tcgcn05\{ld,st\}.16x256b.x1} & $(8, (16, 4)):(1, (16384, 32 \cdot 16384))$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+这些layout是指令特定的，可用于确定每条指令将访问 TMEM 中的哪些确切offset。
+
+尽管采用二维寻址且 TMEM 用作shape为 \((M, N)\) 的 MMA 的累加器，但 TMEM 的lane和col并不总是对应于逻辑矩阵的行和列。与任何寻址方式一样，物理offset可以通过任意 CuTe layout包装和折叠成任何shape。因此，给定一个data layout和一个 TMEM 指令，我们希望确定：
+
+1. data layout是否包含该指令将访问的所有offset，以及
+2. 指令访问的offset在data layout中位于哪个逻辑coords。
+
+一般而言，对于将逻辑coord映射到数据offsets的data layout \( A : \mathbb{Z}(A) \to \mathbb{Z}_\alpha \)，以及将指令coord映射到数据offsets的指令layout \( T : \mathbb{Z}(T) \to \mathbb{Z}_\beta \)，我们希望确定所有offset \( T(i) \) 在 \( A \) 的像中是否存在及其位置。这可以表述为
+\[
+\forall i \in \mathbb{Z}_{|T|}, \exists c \in \mathbb{Z}(A) \text{ 使得 } T(i) = A(c)
+\]
+并且可以通过计算 \( A \) 的left-inverses并检查
+\[
+A(A^{\dagger}(T(i))) = T(i)
+\]
+来高效地计算。也就是说：
+
+- 所有offset \( T(i) \) 都在 \( A^{\dagger} \) 的domain内。
+- 所有coord \( A^{\dagger}(T(i)) \) 都是唯一的，并且在 \( A \) 的domain内。
+
+满足这些条件时，我们可以说每个offset \( T(i) \) 出现在 \( A \) 的image中，并且位于coord \( A^{\dagger}(T(i)) \) 处。layout \( A^{\dagger} \circ T \) 是一个将指令coord映射到逻辑数据coord的layout，例如可以通过 zipped\_divide 来将data layout \( A \) 划分为与指令访问的offset相对应的sublayout。
+
+\subsection{Complement}
+Layout \( \mathbf{L} : \mathbb{Z}(\mathbf{L}) \to \mathcal{D} \) 的\textit{complement}是一个layout \( \mathbf{L}^* : \mathbb{Z}(\mathbf{L}^*) \to \mathcal{D} \)，满足以下条件：
+
+与codomain弱同余：\( \mathcal{D} \lesssim \mathbf{L}^*,  \)\hfill(27)
+
+Disjoint images：\( \forall b \in \mathbb{Z}(\mathbf{L}), \forall a \in \mathbb{Z}^{\mathbf{L}^*} / \{0\}, \mathbf{L}(b) \neq \mathbf{L}^*(a),  \) \hfill(28)
+
+Ordered image：\( \forall a \in \mathbb{Z}_{|\mathbf{L}^*|}/\{0\}, \mathbf{L}^*(a-1) < \mathbf{L}^*(a).  \) \hfill(29)
+
+layout的complement是一个layout，其是生成在codomain of the origin layout但是不在image内的元素的layout。在composition中，layout \( \mathbf{L} \) 常被用作指向另一个layout的间接层，因此complement \( \mathbf{L}^* \) 是一个指向 \( \mathbf{L} \) 所省略元素的layout。Complement操作使得通过logical divide（第 3.5.2 节）拆分layout成为可能，并通过logical product（第 3.5.1 节）实现layout的重复和扩展。
+
+在本节中，我们只关注codomain \( \mathcal{D} \) 是 HTuple(\( \mathbb{Z} \)) 的layout，即对于某个profile \( D \)，有 \( \mathcal{D} = \mathbb{Z}^D \)（整数或坐标）。这使得弱同余条件式 (27) 成立。The disjoint images condition (28) 确保complement生成的值与原始layout的值不同。注意，这里使用的是原始layout的有限domain \( \mathbb{Z}(\mathbf{L}) \)，而complement的无限extended domain \( \mathbb{Z}^{\mathbf{L}^*} \) 也被使用。这保证了无论complement shape是被截断还是扩展（例如通过与右侧layout的composition），它总能生成不同的值。最后，the ordered image condition (29) 确立了complement layout的唯一性。
+
+Tab 7 中的complements示例
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Tab7.png}
+    \label{fig:example}
+\end{figure}
+\subsubsection{Application: Logical Product}
+两个layout \( \mathbf{A} \) 和 \( \mathbf{B} \) 的\textit{logical product}是一个layout \( \mathbf{R} \)，其中“layout \( \mathbf{B} \) 的每个元素都被替换为layout \( \mathbf{A} \) 的一个唯一shifted version”。
+
+具体地，我们将logical product定义为两个layout的函数，生成一个rank为 2 的layout：
+\[ \mathbf{A} \otimes \mathbf{B} = (\mathbf{A}, \mathbf{A}^* \circ \mathbf{B}) \]
+其中 \( \mathbf{A}^* \) 是 \( \mathbf{A} \) 的complement。注意，结果的第一个mode正是输入layout \( \mathbf{A} \)，第二个mode在shape和元素顺序上与输入layout \( \mathbf{B} \) compatible。第一个mode（即layout \( \mathbf{A} \)）通常被称为tile，它将在grid layout \( \mathbf{B} \) 上重复。
+
+考虑一个row-major layout\( (\textcolor{blue}{3},\textcolor{blue}{4}) : (\textcolor{blue}{4},\textcolor{blue}{1}) \) 作为tile，要在col-major layout \( (\textcolor{red}{2},\textcolor{red}{5}) : (\textcolor{red}{1},\textcolor{red}{2}) \) 的grid中重复：
+\[
+\begin{pmatrix} \textcolor{blue}{3} & \textcolor{blue}{4} \\ \textcolor{blue}{4} & \textcolor{blue}{1} \end{pmatrix}
+\otimes
+\begin{pmatrix} \textcolor{red}{2} & \textcolor{red}{5} \\ \textcolor{red}{1} & \textcolor{red}{2} \end{pmatrix}
+=
+\begin{pmatrix} (\textcolor{blue}{3},\textcolor{blue}{4}) & \textcolor{green}{1} \\ (\textcolor{blue}{4},\textcolor{blue}{1}) & \textcolor{green}{12} \end{pmatrix}
+\circ
+\begin{pmatrix} \textcolor{red}{2} & \textcolor{red}{5} \\ \textcolor{red}{1} & \textcolor{red}{2} \end{pmatrix}
+=
+\begin{pmatrix} ((\textcolor{blue}{3},\textcolor{blue}{4}), (\textcolor{red}{2},\textcolor{red}{5})) \\ ((\textcolor{blue}{4},\textcolor{blue}{1}), (\textcolor{green}{12},\textcolor{green}{24})) \end{pmatrix}
+\]
+其中layout \( \textcolor{green}{1} : \textcolor{green}{12} \) 是 \( (\textcolor{blue}{3},\textcolor{blue}{4}) : (\textcolor{blue}{4},\textcolor{blue}{1}) \) 的complement。在结果的第一个mode中，原始tile可用；结果的第二个mode以 \( \textcolor{red}{2} \times \textcolor{red}{5} \) 的col-major顺序唯一地重复原始tile \( \textcolor{red}{10} \) 次。
+
+另一个例子，考虑Layout \( (\textcolor{blue}{4},\textcolor{blue}{8}) : (\textcolor{blue}{20},\textcolor{blue}{2}) \) 作为tile，要在row-major layout \( (\textcolor{red}{3},\textcolor{red}{2}) : (\textcolor{red}{2},\textcolor{red}{1}) \) 的grid中重复：
+\[
+\begin{pmatrix} \textcolor{blue}{4} & \textcolor{blue}{8} \\ \textcolor{blue}{20} & \textcolor{blue}{2} \end{pmatrix}
+\otimes
+\begin{pmatrix} \textcolor{red}{3} & \textcolor{red}{2} \\ \textcolor{red}{2} & \textcolor{red}{1} \end{pmatrix}
+=
+\begin{pmatrix} (\textcolor{blue}{4},\textcolor{blue}{8}) & (\textcolor{green}{2},\textcolor{green}{1}) \\ (\textcolor{blue}{20},\textcolor{blue}{2}) & (\textcolor{green}{1},\textcolor{green}{80}) \end{pmatrix}
+\circ
+\begin{pmatrix} \textcolor{red}{3},\textcolor{red}{2} \\ \textcolor{red}{2},\textcolor{red}{1} \end{pmatrix}
+=
+\begin{pmatrix} ((\textcolor{blue}{4},\textcolor{blue}{8}), (\textcolor{red}{3},\textcolor{red}{2})) \\ ((\textcolor{blue}{20},\textcolor{blue}{2}), (\textcolor{green}{80},\textcolor{green}{1})) \end{pmatrix}
+\]
+其中layout \( (\textcolor{green}{2},\textcolor{green}{1}) : (\textcolor{green}{1},\textcolor{green}{80}) \) 是 \( (\textcolor{blue}{4},\textcolor{blue}{8}) : (\textcolor{blue}{20},\textcolor{blue}{2}) \) 的complement。注意，grid现在交错排列这些tile以产生结果的最小codomain。complement layout告诉结果如何stride layout \( \mathbf{B} \)，而layout \( \mathbf{B} \) 告诉结果如何排序和塑造complement layout。
+
+\textbf{Related Products}：logical product产生一个rank-2的layout，其中第一个mode是原始tile，第二个mode被解释为该tile的grid或tiling。
+
+虽然logical product对 \(\mathbf{A}\) 和 \(\mathbf{B}\) 的rank或compatibility没有限制，但操作 \(\texttt{blocked\_product}\) 通常是一个更直观的版本，它利用输入的rank来构造结果的shape。我们可能期望一个 \(3\times4\) layout与一个 \(2\times5\) layout的乘积产生一个 \(6\times20\) layout。\(\texttt{blocked\_product}\) 要求 \(\mathbf{A}\) 和 \(\mathbf{B}\) 的rank相同，
+\[
+\operatorname{rank}(\mathbf{A}) = \operatorname{rank}(\mathbf{B})
+\]
+以便它可以应用 \(\texttt{zip}\) 操作将logical row-modes与row-modes组合，logical col-modes与col-modes组合。例如，重排上面示例的模式：
+\[
+\left( \begin{array}{cc}
+(\textcolor{blue}{3}, \textcolor{blue}{4}), & (\textcolor{red}{2}, \textcolor{red}{5}) \\
+(\textcolor{blue}{4}, \textcolor{blue}{1}), & (\textcolor{green}{12}, \textcolor{green}{24})
+\end{array} \right)
+\implies
+\left( \begin{array}{cc}
+(\textcolor{blue}{3}, \textcolor{red}{2}), & (\textcolor{blue}{4}, \textcolor{red}{5}) \\
+(\textcolor{blue}{4}, \textcolor{green}{12}), & (\textcolor{blue}{1}, \textcolor{green}{24})
+\end{array} \right)
+\]
+结果得到一个 \(\textcolor{blue}{3}\times\textcolor{red}{2}\) 行、\(\textcolor{blue}{4}\times\textcolor{red}{5}\) 列的layout（即 \(6\times20\)）。Fig 10 绘制了结果layout，每个 \(\textcolor{blue}{3}\times\textcolor{blue}{4}\) 的tile都带有阴影。这被认为是blocked的，因为结果layout中的每个 \(\textcolor{blue}{3}\times\textcolor{blue}{4}\) block恰好是原始 \(\textcolor{blue}{3}\times\textcolor{blue}{4}\) tile的一个shifted version。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig10.png}
+    \label{fig:example}
+\end{figure}
+
+\textbf{raked\_product}：操作 \(\texttt{raked\_product}\) 与blocked product类似，不同之处在于mode以inverse的顺序进行 \(\texttt{zip}\) 操作：
+\[
+\left( \begin{array}{cc}
+(\textcolor{blue}{3}, \textcolor{blue}{4}), & (\textcolor{red}{2}, \textcolor{red}{5}) \\
+(\textcolor{blue}{4}, \textcolor{blue}{1}), & (\textcolor{green}{12}, \textcolor{green}{24})
+\end{array} \right)
+\implies
+\left( \begin{array}{cc}
+(\textcolor{red}{2}, \textcolor{blue}{3}), & (\textcolor{red}{5}, \textcolor{blue}{4}) \\
+(\textcolor{green}{12}, \textcolor{blue}{4}), & (\textcolor{green}{24}, \textcolor{blue}{1})
+\end{array} \right)
+\]
+这导致 \(\textcolor{blue}{3}\times\textcolor{blue}{4}\) 的tile在 \(\textcolor{red}{2}\times\textcolor{red}{5}\) 的tile上被raked而不是blocked。Fig 11 绘制了结果layout，每个 \(\textcolor{blue}{3}\times\textcolor{blue}{4}\) 的tile带有阴影。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig11.png}
+    \label{fig:example}
+\end{figure}
+
+还可以产生许多其他版本的logical product，它们额外地对mode进行分组和重排，以产生一个方便的结果。
+
+\subsubsection{Application: Logical Divide}
+两个layout\(\mathbf{A}\) 和 \(\mathbf{B}\) 的logical division是一个layout \(\mathbf{R}\)，其中“layout \(\mathbf{A}\) 被一分为二：一部分是 \(\mathbf{B}\) 指向的元素，另一部分是 \(\mathbf{B}\) 未指向的元素”。
+
+具体地，我们将logical division定义为两个layout的函数，生成一个rank-2 layout：
+\[
+\mathbf{A} \otimes \mathbf{B} = \mathbf{A} \circ (\mathbf{B}, \mathbf{B}^*_{|\mathbf{A}|}) = \mathbf{A} \circ \mathbf{B}^*
+\]
+其中 \( \mathbf{B}^*_{|\mathbf{A}|} \) 是 \( \mathbf{B} \) 相对于layout \( \mathbf{A} \) 的size所取的complement。由于此操作旨在保留 \( \mathbf{A} \) 的所有元素，并简单地将layout \( \mathbf{A} \) 一分为二，我们要求 \( \mathbf{B}^\star = (\mathbf{B}, \mathbf{B}^*_{|\mathbf{A}|}) \) 是满射到 \( \mathbb{Z}_{|\mathbf{A}|} \) 的。这通常需要扩展 \( \mathbf{B}^\star \) 的size，使得 \( |\mathbf{B}^\star| \geq |\mathbf{A}| \)。此外，我们要求complement \( \mathbf{B}^\star \) 能够complement the layout \( \mathbf{B} \)，即 \( \mathbf{B}^\star = (\mathbf{B}, \mathbf{B}^*_{|\mathbf{A}|}) \) 具有一个reflexive generalized inverse \( \mathbf{B}^+ \)，满足：
+\[
+\mathbf{B}^\star \mathbf{B}^+ \mathbf{B}^\star = \mathbf{B}^\star \tag{30}
+\]
+\[
+\mathbf{B}^+ \mathbf{B}^\star \mathbf{B}^+ = \mathbf{B}^+ \tag{31}
+\]
+
+与logical product操作类似，结果layout \( \mathbf{A} \circ \mathbf{B} \) 的第一个mode通常被称为tile，它在grid或tiling layout \( \mathbf{A} \circ \mathbf{B}^*_{|\mathbf{A}|} \) 上重复。参数 \( \mathbf{B} \) 被称为tiler，它可以扩展为不仅仅是第 3.3.5 节中的layout。
+
+一个直接的例子是，从另一个layout中请求一组逻辑元素是很常见的。例如，要从一个layout中提取每第三个元素，我们可以使用composition：
+\[
+\frac{\textcolor{blue}{24}}{\textcolor{blue}{3}} \circ \frac{\textcolor{red}{8}}{\textcolor{red}{3}} = \frac{\textcolor{blue}{8}}{\textcolor{blue}{9}}
+\]
+\[
+\begin{pmatrix}
+\textcolor{blue}{6}, & \textcolor{blue}{2}, & \textcolor{blue}{2} \\
+(\textcolor{blue}{2}, & \textcolor{blue}{1}, & \textcolor{blue}{20})
+\end{pmatrix} \circ \begin{pmatrix}
+\textcolor{red}{8} \\
+\textcolor{red}{3} \\
+\textcolor{red}{0}
+\end{pmatrix} = \begin{pmatrix}
+(\textcolor{blue}{2}, & \textcolor{blue}{2}, & \textcolor{blue}{2}) \\
+(\textcolor{blue}{6}, & \textcolor{blue}{1}, & \textcolor{blue}{20})
+\end{pmatrix}
+\]
+在上面两个例子中，一个大小为 \( \textcolor{blue}{24} \) 的layout与layout \( \textcolor{red}{8} : \textcolor{red}{3} \) compose，得到了每第三个元素的layout。但是左侧layout中的“其余”元素呢？逻辑除法将左侧layout分成两部分：被右侧layout“命中”的部分和“剩余”部分：
+\[
+\begin{pmatrix}
+\textcolor{blue}{6}, & \textcolor{blue}{2}, & \textcolor{blue}{2} \\
+(\textcolor{blue}{2}, & \textcolor{blue}{1}, & \textcolor{blue}{20})
+\end{pmatrix} \circ \begin{pmatrix}
+\textcolor{red}{8} \\
+\textcolor{red}{3} \\
+\textcolor{red}{0}
+\end{pmatrix} =
+\begin{pmatrix}
+\textcolor{blue}{24} \\
+\textcolor{blue}{3} \\
+\textcolor{blue}{0}
+\end{pmatrix} \circ \begin{pmatrix}
+(\textcolor{red}{8}, & \textcolor{green}{3}) \\
+(\textcolor{red}{3}, & \textcolor{green}{1})
+\end{pmatrix} =
+\begin{pmatrix}
+(\textcolor{red}{8}, & \textcolor{green}{3}) \\
+(\textcolor{blue}{9}, & \textcolor{green}{3})
+\end{pmatrix}
+\]
+\[
+\begin{pmatrix}
+\textcolor{blue}{6}, & \textcolor{blue}{2}, & \textcolor{blue}{2} \\
+(\textcolor{blue}{2}, & \textcolor{blue}{1}, & \textcolor{blue}{20})
+\end{pmatrix} \circ \begin{pmatrix}
+\textcolor{red}{8} \\
+\textcolor{red}{3} \\
+\textcolor{red}{0}
+\end{pmatrix} =
+\begin{pmatrix}
+(\textcolor{blue}{6}, & \textcolor{blue}{2}, & \textcolor{blue}{2}) \\
+(\textcolor{blue}{2}, & \textcolor{blue}{1}, & \textcolor{blue}{20})
+\end{pmatrix} \circ \begin{pmatrix}
+(\textcolor{red}{8}, & \textcolor{green}{3}) \\
+(\textcolor{red}{3}, & \textcolor{green}{1})
+\end{pmatrix} =
+\begin{pmatrix}
+((\textcolor{blue}{2}, & \textcolor{blue}{2}, & \textcolor{blue}{2}), & \textcolor{green}{3}) \\
+((\textcolor{blue}{6}, & \textcolor{blue}{1}, & \textcolor{blue}{20}), & \textcolor{green}{2})
+\end{pmatrix}
+\]
+其中 \( \textcolor{green}{3} : \textcolor{green}{1} \) 是在大小 \( \textcolor{blue}{24} \) 下 \( \textcolor{red}{8} : \textcolor{red}{3} \) 的complement。结果的第一个mode再次包含所请求的左侧layout的每第三个元素，结果的第二个mode是原始layout中包含的这些“tile”的数量（此处为 \( \textcolor{green}{3} \)）以及这些tile之间的strides。complement用于确定哪些元素缺失以及以何种顺序保留它们。
+
+\textbf{Related Divides}：与composition类似，logical divide by-mode也是非常常见的。使用相同的记号和策略：
+\[
+\mathbf{A} \odot \langle \mathbf{B}, \mathbf{C} \rangle = (\mathbf{A}_0, \mathbf{A}_1) \odot \langle \mathbf{B}, \mathbf{C} \rangle = (\mathbf{A}_0 \odot \mathbf{B}, \mathbf{A}_1 \odot \mathbf{C}).
+\]
+其直观意义是能够独立地在列和行上执行这些操作，然后可能重排这些模式以构造新的layout，类似于layout product。例如，回到第 3.3.5 节中的tilers，使用相同的tilers但使用logical divide而不是composition，可以得到tilers所指向的 \( \textcolor{blue}{4} \times \textcolor{blue}{8} \) sublayout的 \( \textcolor{red}{2} \times \textcolor{red}{2} \) layout。如图 12 所示，可以想象一个 \( \textcolor{red}{2} \times \textcolor{red}{2} \) layout映射到每个单独着色的数据块。
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{pic/Fig12.png}
+    \label{fig:example}
+\end{figure}
+
+例如，给定一个layout \( (\textcolor{blue}{8}, \textcolor{blue}{16}) : (\textcolor{blue}{20}, \textcolor{blue}{1}) \)，我们想提取一个tile，其中每列向下取 \( \textcolor{red}{4} \) 个连续元素，每行每隔一个元素取一个。by-mode logical divide产生：
+\[
+\begin{pmatrix}
+\textcolor{blue}{8}, & \textcolor{blue}{16} \\
+(\textcolor{blue}{20}, & \textcolor{blue}{1})
+\end{pmatrix} \odot \begin{pmatrix}
+\textcolor{red}{4} & \textcolor{red}{8} \\
+\textcolor{red}{1} & \textcolor{red}{2}
+\end{pmatrix} =
+\begin{pmatrix}
+\textcolor{blue}{8}, & \textcolor{blue}{16} \\
+(\textcolor{blue}{20}, & \textcolor{blue}{1})
+\end{pmatrix} \circ \begin{pmatrix}
+(\textcolor{red}{4}, & \textcolor{green}{2}) \\
+(\textcolor{red}{1}, & \textcolor{green}{4})
+\end{pmatrix}, \quad
+\begin{pmatrix}
+(\textcolor{red}{4}, & \textcolor{green}{2}) \\
+(\textcolor{blue}{20}, & \textcolor{green}{80})
+\end{pmatrix} =
+\begin{pmatrix}
+(\textcolor{red}{4}, & \textcolor{green}{2}) \\
+(\textcolor{blue}{20}, & \textcolor{green}{80})
+\end{pmatrix}
+\]
+
+其中tile modes用\textcolor{blue}{蓝色}标出，restmode用黑色标出。注意结果layout仍然是 \(8\times16\)，并且tiler所指向的元素已被重排到前 \(4\times8\) 的block中。
+
+操作 \(\texttt{zipped\_divided}\) 先执行by-mode logical divide，然后将相同mode \(\texttt{zip}\) 在一起：
+
+\[
+\begin{pmatrix}
+(\textcolor{blue}{4}, \textcolor{blue}{8}), & (\textcolor{black}{2}, \textcolor{black}{2}) \\
+(\textcolor{blue}{20}, \textcolor{blue}{2}), & (\textcolor{black}{80}, \textcolor{black}{1})
+\end{pmatrix}
+\]
+
+这创建了一个tile mode（\textcolor{blue}{蓝色}），它正是tiler所指向的sublayout；以及一个rest mode（黑色），它是遍历各个tiles的sublayout。操作 \(\texttt{zipped\_divided}\) 总是返回一个rank-2 的layout结果，其中第一个mode恰好是与tiler的compositioni，第二个mode是与complement的compositon。
+
+在软件中一个非常常见的模式是将data layout平铺成一个grid of tiles，然后为每个处理单元选择一个特定的tile。在 PyCuTe 实现中，这看起来像：
+
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\small]
+data = Tensor(MyAccessor, MyLayoutMXN) # Tensor: Coord -> Offset
+tiler = (4,8) # Tile: TiledCoord -> Coord
+tiled_data = zipped_divided(data, tiler) # Compose: (TiledCoord, GridCoord) -> Offset
+tile = tiled_data[None, blk_id] # Slice for a 1D block id
+tile = tiled_data[None, (blk_x, blk_y)] # Slice for a 2D block id, equivalently
+\end{lstlisting}
+
+显而易见，这种模式与第 3.3.4 节的thread-value非常相似，但这里只实际指定了tile-mode，而缺失的Grid mode被计算为complement of the tiler。这个“完整”的tiler具有shape \((\text{块}, \text{网格})\)，然后与数据compose以产生grid of tiles，可以在第二个mode上通过块标识符进行slice，从而为处理单元提取特定的tile。
+
+还可以产生许多其他版本的logical division，它们额外地对mode进行分组和重排，以产生一个方便的结果。
+
+\section{Conclusion}
+
+本文介绍了 CuTe，一个用于表示和操作tensor layout的数学框架，旨在应对现代 GPU 架构日益增长的复杂性。通过其hirarchical layout representation，CuTe 提供了一种通用的方法来编写和管理当代硬件上专用tensor指令所需的复杂data layout和partitioning patterns。通过其丰富的代数运算，CuTe 为在高性能线性代数核的开发中操作layouts和生成新layout提供了一种原则性方法。表示与代数相结合，使得对复杂layout和划分的支持、关注点分离以及静态分析和优化成为可能。
+
+CuTe 布局表示的表达能力在几个关键应用中被证明是非常有用的。CuTe 有助于将不同的算法（如通用张量-张量收缩（GETT）和卷积（CONV））表示为通用矩阵乘法（GEMM）的实例，从而促进代码复用和算法统一性。例如，CuTe 允许使用 \((m,n)\) 坐标对矩阵进行索引，无论其具体数据layout如何，并使通用算法与特定layout保持正交，而需要特定layout的算法或指令则可以静态地检查、验证和推理其张量参数。
+
+CuTe 布局代数使得tensor layout的静态分析和变换能够实现和验证通用算法。例如，它能够推导 COPY 操作的最大向量化机会，验证矩阵乘加（MMA）和 COPY 指令的输入和输出layout，以及推导具有避免bank conflict的置换模式的最优共享内存布局。这些能力将布局管理从容易出错的手动过程转变为系统化、可验证的方法论。
+
+CuTe 的实际影响体现在其在生产系统中的成功部署，最显著的是作为 NVIDIA CUTLASS v3 和 v4 库的基础。CUTLASS 以及 FlashAttention 等应用中的性能评估表明，CuTe 的抽象不会引入性能开销，同时显著加速软件开发。该框架的采用验证了其双重承诺：保持手工优化代码的性能特征，同时大幅降低开发复杂性和时间。
+
+展望未来，CuTe 的数学基础和代数方法使其能够作为一个可持续的框架，适应未来的架构创新。通过将layout关注点与算法逻辑分离，并提供强大的编译时推理能力，CuTe 建立了一种以tensor为中心的编程方法，能够满足广泛计算系统和应用的需求。
 \bibliographystyle{alpha}
 \bibliography{sample}
 
