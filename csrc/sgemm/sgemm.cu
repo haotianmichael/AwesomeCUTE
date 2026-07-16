@@ -76,14 +76,14 @@ opt:
 __device__ __forceinline__ void ld_st_128bits(void *dst, void *src) {
     *reinterpret_cast<float4 *>(dst) = *reinterpret_cast<float4 *>(src);
 }
-template<unsigned int BLOCK_SZIE_M = 128,
+template<unsigned int BLOCK_SIZE_M = 128,
          unsigned int BLOCK_SIZE_K = 8,
          unsigned int BLOCK_SIZE_N = 128,
          unsigned int THREAD_SIZE_X = 8,
          unsigned int THREAD_SIZE_Y = 8> 
 __global__ void cuda_sgemm_opt(float *A, float *B, float *C, const int M, const int N, const int K) {
 
-    const int BM = BLOCK_SZIE_M;
+    const int BM = BLOCK_SIZE_M;
     const int BN = BLOCK_SIZE_N;
     const int BK = BLOCK_SIZE_K;
 

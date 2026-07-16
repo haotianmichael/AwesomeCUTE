@@ -142,7 +142,6 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
         ptx::cp_async_wait_group<0>();
         __syncthreads();
     }
-
     {
         write_stage ^= 1;
         for(int i = 0; i < WARP_TILE_M; i ++) {
