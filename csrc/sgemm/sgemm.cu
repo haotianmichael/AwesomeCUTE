@@ -112,7 +112,7 @@ __global__ void cuda_sgemm_opt(float *A, float *B, float *C, const int M, const 
     unsigned int write_stage = 0;
     {
         /*
-         Glm Access:
+         Glm Access[load]:
             4float/thr -> 16Bytes/thr  ->  ld.global.v4.f32/thr -> st.shared.v4.f32/thr
         */
         const int load_gmem_a_k = load_smem_a_k;
@@ -144,14 +144,17 @@ __global__ void cuda_sgemm_opt(float *A, float *B, float *C, const int M, const 
         write_stage ^= 1;
         for(int k = 0; k < BK; k ++) {
             /*
-                Shm Access:
+                Shm Access[load]:
                     ld.shared.v4.f32/thr 
             */
             ld_st_128bits(&regA[0], &tileA[write_stage][k][ty * THREAD_SIZE_Y]);
             ld_st_128bits(&regA[4], &tileA[write_stage][k][ty * THREAD_SIZE_Y + 4]);
             ld_st_128bits(&regB[0], &tileB[write_stage][k][tx * THREAD_SIZE_X]);
             ld_st_128bits(&regB[4], &tileB[write_stage][k][tx * THREAD_SIZE_X + 4]);
-            // Compute: fma
+            /*
+                Compute:
+                    fma
+            */
             for(int i = 0; i < THREAD_SIZE_Y; i++) {
                 for(int j = 0; j < THREAD_SIZE_X; j ++) {
                     res[i][j] += regA[i] * regB[j];
@@ -173,7 +176,10 @@ __global__ void cuda_sgemm_opt(float *A, float *B, float *C, const int M, const 
             }
         }
     }
-
+    /*
+        Glm Access[Store]:
+            st.global.v4.f32
+    */
     for(int i = 0; i < THREAD_SIZE_Y; i ++) {
         const int store_matrix_gmem_m = blockIdx.y * BM + ty * THREAD_SIZE_Y + i;
         const int store_matrix_gmem_n = blockIdx.x * BN + tx * THREAD_SIZE_X;

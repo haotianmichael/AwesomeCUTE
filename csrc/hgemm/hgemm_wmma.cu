@@ -106,6 +106,10 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
     wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> B_frag[WARP_TILE_N];
     unsigned int write_stage = 0;
     {
+        /*
+            Glm Access[load]:
+                8half/thr -> 16Bytes/thr -> cp.async.cg.shared.global 
+        */
         const int load_gmem_a_k = load_smem_a_k;
         const int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
         const int load_gmem_b_k = load_smem_b_k;
@@ -127,12 +131,20 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
         ptx::cp_async_cg<16>(&tileB[write_stage][load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]); 
         write_stage ^= 1;
 
+        /*
+            Shm Access[load]: 
+                wmma.load.a.sync.aligned.row.m16n16k16.shared.f16 
+        */
         for(int i = 0; i < WARP_TILE_M; i ++) {
             wmma::load_matrix_sync(A_frag[i], &tileA[write_stage][warp_m * WARP_TILE_M * WMMA_M + i * WMMA_M][0], BK);
         }
         for(int j = 0; j < WARP_TILE_N; j ++) {
             wmma::load_matrix_sync(B_frag[j], &tileB[write_stage][0][warp_n * WARP_TILE_N * WMMA_N + j * WMMA_N], BN);
         }
+        /*
+            Compute:
+                 wmma.mma.sync.aligned.row.m16n16k16.shared.f16
+        */
         for(int i = 0; i < WARP_TILE_M; i ++) {
             for(int j = 0; j < WARP_TILE_N; j ++) {
                 wmma::mma_sync(C_frag[i][j], A_frag[i], B_frag[j], C_frag[i][j]);
@@ -156,7 +168,10 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
             }
         }
     }
-
+    /*
+        Glm Access[Store]:
+            wmma.store.d.sync.aligned.row.m16n16k16.global.f16
+    */
     for(int i = 0; i < WARP_TILE_M; i ++){
         for(int j = 0; j < WARP_TILE_N; j ++) {
             const int store_matrix_gmem_m = blockIdx.y * BM + warp_m * WARP_TILE_M * WMMA_M + i * WMMA_M;
