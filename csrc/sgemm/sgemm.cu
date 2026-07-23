@@ -65,6 +65,7 @@ __global__ void cuda_sgemm_naive(float *A, float *B, float *C, const int M, cons
 
 /* 
 opt:
+ @ C = A * B
  1. global mem
  2. tiled shared mem
  3. multiTask per thread

@@ -15,7 +15,10 @@ void fill_fragment(fragment<...> &a, const T& v);
 void mma_sync(fragment<...> &a, fragment<...> &b, const fragment<...> &c, bool staf=false);
 */
 
-/* naive wmma version*/
+/* 
+   @ C = A * B
+   @naive wmma version
+*/
 template<unsigned int WMMA_M = 16,
          unsigned int WMMA_N = 16,
          unsigned int WMMA_K = 16>
@@ -33,7 +36,7 @@ __global__ void hgemm_wmma_m16n16k16_kernel_naive(half *A, half *B, half *C, uns
     wmma::fill_fragment(C_frag, 0.0);
 
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> A_frag;
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> B_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> B_frag;
 
 #pragma unroll
     for(int k = 0; k < K; k += WMMA_K) {
@@ -58,6 +61,10 @@ void hgemm_wmma_m16n16k16_naive(half *A, half *B, half *C, unsigned int M, unsig
 
 /*
 opt:
+    @ C = A * B
+        * tileB[K][N]
+        * wmma::col_major
+            * wmma::load_matrix_sync包含trans B的布局
     1. block: 8个warp处理一块Block数据
     2. mma4x2: 数据(128x128->4x2个[32,64]的tile)
     3. warp2x4: wmma操作(一个tile用2x4个fragment处理->每个warp处理8个fragment)
@@ -103,7 +110,7 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
         }
     }
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> A_frag[WARP_TILE_M];
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> B_frag[WARP_TILE_N];
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> B_frag[WARP_TILE_N];
     unsigned int write_stage = 0;
     {
         /*
