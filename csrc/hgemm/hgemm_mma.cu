@@ -18,6 +18,8 @@ __device__ __forceinline__ void ld_st_32bit(void *dst, void *src) {
     @ C = A * B
         * tileB[K][N]
         * ldmatrix_trans_sync
+    @ C = A * B^T
+        * 一般可以先进入kernel之前就把B转置成B^T,kernel本身不变
     @ldmatrix+自定义uint32_t寄存器
 */
 template<const int MMA_M = 16,
@@ -92,61 +94,6 @@ void hgemm_mma_m16n8k16_ldmatrix(half *A, half *B, half *C, unsigned int M, unsi
     dim3 block(32);
     dim3 grid(div_ceil(N, MMA_N), div_ceil(M, MMA_M));
     hgemm_mma_m16n8k16_ldmatrix_kernel<MMA_M, MMA_N, MMA_K><<<grid, block>>>(A, B, C, M, N, K);
-    return;
-}
-
-/*
-    @ C = A * B^T
-        * wmma::col_major
-        * ldmatrix_sync
-        * swap R1 and R2
-    @ldmatrix+wmma寄存器
-*/
-template<unsigned int WMMA_M = 16,
-         unsigned int WMMA_N = 16,
-         unsigned int WMMA_K = 16>
-__global__ void hgemm_mma_m16n16k16_ldmatrix_kernel(half *A, half *B, half *C) {
-    __shared__ half smem_a[16 * 16];
-    __shared__ half smem_b[16 * 16];
-    __shared__ half smem_c[16 * 16];
-
-    int tx = threadIdx.x;
-    ld_st_128bit(smem_a + 8 * tx, A + 8 * tx);
-    ld_st_128bit(smem_b + 8 * tx, B + 8 * tx);
-    __syncthreads();
-
-    unsigned int row = tx % 16;
-    unsigned int col = tx / 16;
-
-    wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> C_frag;
-    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> A_frag;
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> B_frag;
-
-    wmma::fill_fragment(C_frag, 0.0f);
-    ptx::ldmatrix_sync(A_frag.x, smem_a + row * 16 + col * 8);
-    ptx::ldmatrix_sync(B_frag.x, smem_b + row * 16 + col * 8);
-    
-    // swap R1 and R2 of B, this is required by B's layout
-    half2 tmp = HALF2(B_frag.x[2]);
-    HALF2(B_frag.x[2]) = HALF2(B_frag.x[4]); 
-    HALF2(B_frag.x[4]) = tmp;
-    // 2 m16n8k16 HMMA to achieve m16n16k16 gemm
-    ptx::mma_sync_m16n8k16(C_frag.x, A_frag.x, B_frag.x);
-    ptx::mma_sync_m16n8k16(C_frag.x + 4, A_frag.x, B_frag.x + 4);
-
-    wmma::store_matrix_sync(smem_c, C_frag, 16, wmma::mem_row_major);
-
-    ptx::stmatrix_sync(smem_c + row * 16 + col * 8, C_frag.x);
-    __syncthreads();
-    ld_st_128bit(C + 8 * tx, smem_c + 8 * tx);
-}
-void hgemm_mma_m16n16k16_ldmatrix(half *A, half *B, half*C, int M, int N, int K) {
-    constexpr int WMMA_M = 16;
-    constexpr int WMMA_K = 16;
-    constexpr int WMMA_N = 16;
-    dim3 block(32);
-    dim3 grid(1);
-    hgemm_mma_m16n16k16_ldmatrix_kernel<WMMA_M, WMMA_N, WMMA_K><<<grid, block>>>(A, B, C);
     return;
 }
 
