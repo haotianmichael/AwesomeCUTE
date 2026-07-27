@@ -22,78 +22,136 @@ __device__ __forceinline__ void ld_st_32bit(void *dst, void *src) {
         * 一般可以先进入kernel之前就把B转置成B^T,kernel本身不变
     @ldmatrix+自定义uint32_t寄存器
 */
-template<const int MMA_M = 16,
-         const int MMA_N = 8,
-         const int MMA_K = 16>
-__global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(half *A, half *B, half *C, unsigned int M, unsigned int N, unsigned int K) {
+template <unsigned int MMA_M = 16,
+          unsigned int MMA_N = 8,
+          unsigned int MMA_K = 16,
+          unsigned int MMA_TILE_M = 4,
+          unsigned int MMA_TILE_N = 2,
+          unsigned int WARP_TILE_M = 2,
+          unsigned int WARP_TILE_N = 8>
+__global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(half *A, half *B, half *C, const int M, const int N, const int K) {
 
-    const int bx = blockIdx.x;
-    const int by = blockIdx.y;
-    const int NUM_K_TILES = div_ceil(K, MMA_K);
-    constexpr int BM = MMA_M;
-    constexpr int BN = MMA_N;
-    constexpr int BK = MMA_K;
+    const int BM = MMA_M * MMA_TILE_M * WARP_TILE_M; // 128
+    const int BN = MMA_N * MMA_TILE_N * WARP_TILE_N; // 128
+    const int BK = MMA_K;
+    const int K_NUM_TILES = (K + BK - 1) / BK;
 
-    __shared__ half tileA[MMA_M][MMA_K];
-    __shared__ half tileB[MMA_K][MMA_N];
-    __shared__ half tileC[MMA_M][MMA_N];
-
-    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    unsigned int ty = threadIdx.y;
+    unsigned int tx = threadIdx.x;
+    unsigned int tid = ty * blockDim.x + tx;
+    unsigned int warp_id = tid / 32;
+    unsigned int warp_m = warp_id / 2;
+    unsigned int warp_n = warp_id % 2;
     const int lane_id = tid % 32;
 
     const int load_smem_a_m = tid / 2;
     const int load_smem_a_k = (tid % 2) * 8;
-    const int load_smem_b_k = tid;
-    const int load_smem_b_n = 0;
-    const int load_gmem_a_m = by * BM + load_smem_a_m;
-    const int load_gmem_b_n = bx * BN + load_smem_b_n;
-    if(load_gmem_a_m >= M && load_gmem_b_n >= N) return;
-   
-    uint32_t RC[2] = {0, 0};
-    for(int k = 0; k < NUM_K_TILES; k ++) {
-        int load_gmem_a_k = k * BK + load_smem_a_k;
-        int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
-        ptx::cp_async_cg<16>(&tileA[load_smem_a_m][load_smem_a_k], &A[load_gmem_a_addr]);
-        
-        if(lane_id < MMA_K) {
-            int load_gmem_b_k = k * MMA_K + load_smem_b_k;
-            int load_gmem_b_addr = load_gmem_b_k * N + load_gmem_b_n;
-            ptx::cp_async_cg<16>(&tileB[load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]);
-        }
+    const int load_smem_b_k = tid / 16;
+    const int load_smem_b_n = (tid % 16) * 8;
+
+    const int load_gmem_a_m = blockIdx.y * BM + load_smem_a_m;
+    const int load_gmem_b_n = blockIdx.x * BN + load_smem_b_n;
+
+    if(load_gmem_a_m >= M || load_gmem_b_n >= N) return;
+
+    __shared__ half tileA[2][BM][BK];
+    __shared__ half tileB[2][BK][BN];
+    __shared__ half tileC[BM][BN];
+    uint32_t RC[WARP_TILE_M][WARP_TILE_N][2] = {0};
+
+    unsigned int write_stage = 0;
+    {
+        const int load_gmem_a_k = load_smem_a_k;
+        const int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
+        const int load_gmem_b_k = load_smem_b_k;
+        const int load_gmem_b_addr = load_gmem_b_k * N + load_gmem_b_n;
+        ptx::cp_async_cg<16>(&tileA[write_stage][load_smem_a_m][load_smem_a_k], &A[load_gmem_a_addr]);
+        ptx::cp_async_cg<16>(&tileB[write_stage][load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]); 
         ptx::cp_async_commit_group();
         ptx::cp_async_wait_group<0>();
-        __syncthreads();
-
-        uint32_t RA[4];
-        uint32_t RB[2];
-
-        ptx::ldmatrix_sync(RA, &tileA[lane_id % 16][(lane_id/16)*8]);
-        ptx::ldmatrix_trans_sync(RB, &tileB[lane_id % 16][0]);
-        ptx::mma_sync_m16n8k16(RC, RA, RB);
-        __syncthreads();
+        write_stage ^= 1;
     }
-
-    ld_st_32bit(&tileC[lane_id / 4][(lane_id % 4) * 2], &RC[0]);
-    ld_st_32bit(&tileC[lane_id / 4 + 8][((lane_id % 4) * 2)], &RC[1]);
-
     __syncthreads();
-    if(lane_id < MMA_M) {
-        int store_gmem_c_m = by * BM + lane_id;
-        int store_gmem_c_n = bx * BN;
-        int store_gmem_c_addr = store_gmem_c_m * N + store_gmem_c_n;
-        ld_st_128bit(&C[store_gmem_c_addr], &tileC[lane_id][0]);
+
+    for(int s = 1; s < K_NUM_TILES; s ++) {
+
+        const int load_gmem_a_k = s * BK + load_smem_a_k;
+        const int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
+        const int load_gmem_b_k = s * BK + load_smem_b_k;
+        const int load_gmem_b_addr = load_gmem_b_k * N + load_gmem_b_n;
+        ptx::cp_async_cg<16>(&tileA[write_stage][load_smem_a_m][load_smem_a_k], &A[load_gmem_a_addr]);
+        ptx::cp_async_cg<16>(&tileB[write_stage][load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]); 
+        ptx::cp_async_commit_group();
+        ptx::cp_async_wait_group<0>();
+        write_stage ^= 1;
+
+        uint32_t RA[WARP_TILE_M][4];
+        uint32_t RB[WARP_TILE_N][2];
+
+        for(int i = 0; i < WARP_TILE_M; i ++) {
+            ptx::ldmatrix_sync(RA[i], &tileA[write_stage][warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id % 16][(lane_id / 16) * 8]);
+        }
+
+        for(int j = 0; j < WARP_TILE_N; j ++) {
+            ptx::ldmatrix_trans_sync(RB[j], &tileB[write_stage][lane_id % 16][warp_n * WARP_TILE_N * MMA_N + j * MMA_N]);
+        } 
+
+        for(int i = 0; i < WARP_TILE_M; i ++) {
+            for(int j = 0; j < WARP_TILE_N; j ++) {
+                ptx::mma_sync_m16n8k16(RC[i][j], RA[i], RB[j]);
+            }
+        }
+        __syncthreads();
     }
+    { // last tile
+        write_stage ^= 1;
+        uint32_t RA[WARP_TILE_M][4];
+        uint32_t RB[WARP_TILE_N][2];
+        for(int i = 0; i < WARP_TILE_M; i ++) {
+            ptx::ldmatrix_sync(RA[i], &tileA[write_stage][warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id % 16][(lane_id / 16) * 8]);
+        }
+        for(int j = 0; j < WARP_TILE_N; j ++) {
+            ptx::ldmatrix_trans_sync(RB[j], &tileB[write_stage][lane_id % 16][warp_n * WARP_TILE_N * MMA_N + j * MMA_N]);
+        } 
+        for(int i = 0; i < WARP_TILE_M; i ++) {
+            for(int j = 0; j < WARP_TILE_N; j ++) {
+                ptx::mma_sync_m16n8k16(RC[i][j], RA[i], RB[j]);
+            }
+        }
+    }
+
+    for(int i = 0; i < WARP_TILE_M; i ++) {
+        for(int j = 0; j < WARP_TILE_N; j ++) {
+            ld_st_32bit(&tileC[lane_id / 4][(lane_id % 4) * 2], &RC[i][j][0]);
+            ld_st_32bit(&tileC[lane_id / 4 + 8][(lane_id % 4) * 2], &RC[i][j][1]);
+        }
+    }
+    __syncthreads();
+    for(int i = 0; i < WARP_TILE_M; i ++) {
+        for(int j = 0; j < WARP_TILE_N; j ++) {
+            int store_gmem_c_m = blockIdx.y * BM + warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id;
+            int store_gmem_c_n = blockIdx.x * BN + warp_n * WARP_TILE_N * MMA_N + j * MMA_N;
+            int store_gmem_c_addr = store_gmem_c_m * N + store_gmem_c_n;
+            if(lane_id < MMA_M) {
+                ld_st_128bit(&C[store_gmem_c_addr], &tileC[lane_id][0]);
+            }
+        }
+    }       
     return;
 }
-void hgemm_mma_m16n8k16_ldmatrix(half *A, half *B, half *C, unsigned int M, unsigned int N, unsigned K) {
+void hgemm_mma_m16n8k16_ldmatrix(half *A, half *B, half *C, const int M, const int N, const int K) {
 
-    constexpr int MMA_M = 16; 
-    constexpr int MMA_K = 16; 
-    constexpr int MMA_N = 8; 
-
-    dim3 block(32);
-    dim3 grid(div_ceil(N, MMA_N), div_ceil(M, MMA_M));
-    hgemm_mma_m16n8k16_ldmatrix_kernel<MMA_M, MMA_N, MMA_K><<<grid, block>>>(A, B, C, M, N, K);
+    constexpr int MMA_M = 16;
+    constexpr int MMA_K = 8;
+    constexpr int MMA_N = 16;
+    constexpr int MMA_TILE_M = 4;
+    constexpr int MMA_TILE_N = 2;
+    constexpr int WARP_TILE_M = 2;
+    constexpr int WARP_TILE_N = 4;
+    dim3 block(256);
+    dim3 grid(div_ceil(N, MMA_N*MMA_TILE_N*WARP_TILE_N), div_ceil(M, MMA_TILE_M*MMA_M*WARP_TILE_M));
+    hgemm_mma_m16n8k16_ldmatrix_kernel<MMA_M, MMA_N, MMA_K, MMA_TILE_M, MMA_TILE_N, WARP_TILE_M, WARP_TILE_N><<<grid, block>>>(A, B, C, M, N, K);
+    
     return;
 }
 
