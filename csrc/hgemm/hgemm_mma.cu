@@ -64,10 +64,10 @@ __global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(
     // -------------------- prologue: prefetch first K_STAGE-1 tiles --------------------
     #pragma unroll
     for(int s = 0; s < K_STAGE - 1; s ++) {
-        const int a_gk = s * BK + a_sm_k;
-        const int b_gk = s * BK + b_sm_k;
-        ptx::cp_async_cg<16>(&s_a[s * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gk]);
-        ptx::cp_async_cg<16>(&s_b[s * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gk * N + b_gm_n]);
+        const int a_gm_k = s * BK + a_sm_k;
+        const int b_gm_k = s * BK + b_sm_k;
+        ptx::cp_async_cg<16>(&s_a[s * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gm_k]);
+        ptx::cp_async_cg<16>(&s_b[s * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gm_k * N + b_gm_n]);
         ptx::cp_async_commit_group();
     }
 
@@ -103,10 +103,10 @@ __global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(
         int nk = k + K_STAGE - 1;
         if(nk < K_NUM_TILES) {
             int ws = nk % K_STAGE;
-            int a_gk = nk * BK + a_sm_k;
-            int b_gk = nk * BK + b_sm_k;
-            ptx::cp_async_cg<16>(&s_a[ws * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gk]);
-            ptx::cp_async_cg<16>(&s_b[ws * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gk * N + b_gm_n]);
+            int a_gm_k = nk * BK + a_sm_k;
+            int b_gm_k = nk * BK + b_sm_k;
+            ptx::cp_async_cg<16>(&s_a[ws * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gm_k]);
+            ptx::cp_async_cg<16>(&s_b[ws * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gm_k * N + b_gm_n]);
         }
         // commit even when nk is out of range -> empty group keeps wait_group accounting uniform
         ptx::cp_async_commit_group();
@@ -128,7 +128,7 @@ __global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(
     __syncthreads();
 
     // s_c[128][128] -> C, 128-bit vectorized & coalesced, independent of warp layout
-    for (int idx = tid; idx < (BM * BN) / 8; idx += blockDim.x) {
+    for (int idx = tid; idx < (BM * BN) / 8; idx += (blockDim.x*blockDim.y)) {
         int row = (idx * 8) / BN;
         int col = (idx * 8) % BN;
         int gm  = by * BM + row;
@@ -394,7 +394,7 @@ int main() {
     Tester tester(512, 2048, 1024, 1, 10, 100, true);
     const int opt = 1;
     if(opt == 1) {
-        tester.evaluate(hgemm_mma_m16n8k16_ldmatrix, "hgemm_mma_m16n16k16_ldmatrix_kernel");
+        tester.evaluate(hgemm_mma_m16n8k16_ldmatrix, "hgemm_mma_m16n8k16_ldmatrix_kernel");
     }
     
     return 0;

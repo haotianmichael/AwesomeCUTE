@@ -5,3 +5,4 @@ CMakeFiles/
 !CMakeLists.txt
 .cache/
 .vscode/
+docs/*
