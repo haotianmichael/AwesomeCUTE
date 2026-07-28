@@ -5,6 +5,9 @@
 #define  REG(val) (*reinterpret_cast<uint32_t *>(&(val)))
 #define  HALF2(val) (*reinterpret_cast<half2 *>(&(val)))
 
+// ---------------------------------------------------------------------------
+// PTX helpers (uint32_t overloads, SM80/89 — no stmatrix, no Hopper)
+// ---------------------------------------------------------------------------
 namespace ptx {
 using fp16 = half;
 /* FP16_T*/
@@ -65,6 +68,7 @@ __device__ __forceinline__ void ldmatrix_trans_sync(uint32_t *dst, void *addr) {
      : "l"(__cvta_generic_to_shared(addr)));
 }
 
+// D(f16) = A * B + C(f16),  accumulates into c
 __device__ __forceinline__ void mma_sync_m16n8k16(uint32_t *c, uint32_t *a, uint32_t *b) {
     asm volatile(
       "mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0, %1}, {%2, %3, %4, %5}, {%6, %7}, {%8, %9};\n" 
@@ -89,7 +93,7 @@ __device__ __forceinline__ void stmatrix_sync(half *dst, half *src) {
 
 // ca(cache all, L1+L2): support 4, 8, 16Bytes, cg(cache global, L2): only support 16Bytes.
 template<int BYTES>
-__device__ __forceinline__ void cp_async_ca(half *dst, half *src) {
+__device__ __forceinline__ void cp_async_ca(half *dst, const half *src) {
     asm volatile(
         "cp.async.ca.shared.global.L2::128B [%0], [%1], %2;\n" :: 
         "l"(__cvta_generic_to_shared(dst)),
@@ -99,7 +103,7 @@ __device__ __forceinline__ void cp_async_ca(half *dst, half *src) {
 }
 
 template<int BYTES>
-__device__ __forceinline__ void cp_async_cg(half *dst, half *src) {
+__device__ __forceinline__ void cp_async_cg(half *dst, const half *src) {
     asm volatile(
         "cp.async.cg.shared.global.L2::128B [%0], [%1], %2;\n" :: 
         "l"(__cvta_generic_to_shared(dst)),

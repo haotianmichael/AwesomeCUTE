@@ -21,136 +21,147 @@ __device__ __forceinline__ void ld_st_32bit(void *dst, void *src) {
     @ C = A * B^T
         * 一般可以先进入kernel之前就把B转置成B^T,kernel本身不变
     @ldmatrix+自定义uint32_t寄存器
+    @preSM90: ld_st_128bit
+    @SM90: stmatrix.sync
+    @Requires  M % BM == 0, N % BN == 0, K % BK == 0.
 */
-template <unsigned int MMA_M = 16,
-          unsigned int MMA_N = 8,
-          unsigned int MMA_K = 16,
-          unsigned int MMA_TILE_M = 4,
-          unsigned int MMA_TILE_N = 2,
-          unsigned int WARP_TILE_M = 2,
-          unsigned int WARP_TILE_N = 8>
-__global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(half *A, half *B, half *C, const int M, const int N, const int K) {
+template <int MMA_M = 16, int MMA_N = 8, int MMA_K = 16,
+          int MMA_TILE_M = 4, int MMA_TILE_N = 2,
+          int WARP_TILE_M = 2, int WARP_TILE_N = 8,
+          int K_STAGE = 4>
+__global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(
+        const half *__restrict__ A, const half *__restrict__ B, 
+        half *__restrict__ C, const int M, const int N, const int K) {
 
-    const int BM = MMA_M * MMA_TILE_M * WARP_TILE_M; // 128
-    const int BN = MMA_N * MMA_TILE_N * WARP_TILE_N; // 128
-    const int BK = MMA_K;
+    constexpr int BM = MMA_M * MMA_TILE_M * WARP_TILE_M; // 128
+    constexpr int BN = MMA_N * MMA_TILE_N * WARP_TILE_N; // 128
+    constexpr int BK = MMA_K; // 16
     const int K_NUM_TILES = (K + BK - 1) / BK;
 
-    unsigned int ty = threadIdx.y;
-    unsigned int tx = threadIdx.x;
-    unsigned int tid = ty * blockDim.x + tx;
-    unsigned int warp_id = tid / 32;
-    unsigned int warp_m = warp_id / 2;
-    unsigned int warp_n = warp_id % 2;
-    const int lane_id = tid % 32;
+    const int bx = blockIdx.x, by = blockIdx.y;
+    const int tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const int warp_id = tid >> 5;
+    const int lane_id = tid & 31;
+    const int warp_m = warp_id / 2;
+    const int warp_n = warp_id % 2;
 
-    const int load_smem_a_m = tid / 2;
-    const int load_smem_a_k = (tid % 2) * 8;
-    const int load_smem_b_k = tid / 16;
-    const int load_smem_b_n = (tid % 16) * 8;
+    // gmem->smem mapping: every thread moves one 16B (8-half) chunk of A and of B
+    const int a_sm_m = tid / 2;
+    const int a_sm_k = (tid % 2) * 8;
+    const int b_sm_k = tid / 16;
+    const int b_sm_n = (tid % 16) * 8;
+    const int a_gm_m = by * BM + a_sm_m;
+    const int b_gm_n = bx * BN + b_sm_n;
 
-    const int load_gmem_a_m = blockIdx.y * BM + load_smem_a_m;
-    const int load_gmem_b_n = blockIdx.x * BN + load_smem_b_n;
+    if(a_gm_m >= M || b_gm_n >= N) return;
 
-    if(load_gmem_a_m >= M || load_gmem_b_n >= N) return;
+    // --- shared mem: A/B ring buffer; C aliases the SAME storage (epilogue reuse) ---
+    extern __shared__ half smem[]; 
+    half *s_a = smem;                       // [K_STAGE][BM][BK]
+    half *s_b = smem + K_STAGE * BM + BK;   // [K_STAGE][BK][BN]
+    half *s_c = smem;                       // [BM][BN], only after the K loop
 
-    __shared__ half tileA[2][BM][BK];
-    __shared__ half tileB[2][BK][BN];
-    __shared__ half tileC[BM][BN];
-    uint32_t RC[WARP_TILE_M][WARP_TILE_N][2] = {0};
+    uint32_t RC[WARP_TILE_M][WARP_TILE_N][2] = {}; 
 
-    unsigned int write_stage = 0;
-    {
-        const int load_gmem_a_k = load_smem_a_k;
-        const int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
-        const int load_gmem_b_k = load_smem_b_k;
-        const int load_gmem_b_addr = load_gmem_b_k * N + load_gmem_b_n;
-        ptx::cp_async_cg<16>(&tileA[write_stage][load_smem_a_m][load_smem_a_k], &A[load_gmem_a_addr]);
-        ptx::cp_async_cg<16>(&tileB[write_stage][load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]); 
+    // -------------------- prologue: prefetch first K_STAGE-1 tiles --------------------
+    #pragma unroll
+    for(int s = 0; s < K_STAGE - 1; s ++) {
+        const int a_gk = s * BK + a_sm_k;
+        const int b_gk = s * BK + b_sm_k;
+        ptx::cp_async_cg<16>(&s_a[s * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gk]);
+        ptx::cp_async_cg<16>(&s_b[s * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gk * N + b_gm_n]);
         ptx::cp_async_commit_group();
-        ptx::cp_async_wait_group<0>();
-        write_stage ^= 1;
     }
-    __syncthreads();
 
-    for(int s = 1; s < K_NUM_TILES; s ++) {
-
-        const int load_gmem_a_k = s * BK + load_smem_a_k;
-        const int load_gmem_a_addr = load_gmem_a_m * K + load_gmem_a_k;
-        const int load_gmem_b_k = s * BK + load_smem_b_k;
-        const int load_gmem_b_addr = load_gmem_b_k * N + load_gmem_b_n;
-        ptx::cp_async_cg<16>(&tileA[write_stage][load_smem_a_m][load_smem_a_k], &A[load_gmem_a_addr]);
-        ptx::cp_async_cg<16>(&tileB[write_stage][load_smem_b_k][load_smem_b_n], &B[load_gmem_b_addr]); 
-        ptx::cp_async_commit_group();
-        ptx::cp_async_wait_group<0>();
-        write_stage ^= 1;
-
-        uint32_t RA[WARP_TILE_M][4];
-        uint32_t RB[WARP_TILE_N][2];
-
-        for(int i = 0; i < WARP_TILE_M; i ++) {
-            ptx::ldmatrix_sync(RA[i], &tileA[write_stage][warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id % 16][(lane_id / 16) * 8]);
-        }
-
-        for(int j = 0; j < WARP_TILE_N; j ++) {
-            ptx::ldmatrix_trans_sync(RB[j], &tileB[write_stage][lane_id % 16][warp_n * WARP_TILE_N * MMA_N + j * MMA_N]);
-        } 
-
-        for(int i = 0; i < WARP_TILE_M; i ++) {
-            for(int j = 0; j < WARP_TILE_N; j ++) {
-                ptx::mma_sync_m16n8k16(RC[i][j], RA[i], RB[j]);
-            }
-        }
+    // ------------------------------- main loop -------------------------------
+    for(int k = 0; k < K_NUM_TILES; k ++) {
+        // leave K_STAGE-2 groups in flight -> the tile we are about to consume is ready
+        ptx::cp_async_wait_group<K_STAGE - 2>();
         __syncthreads();
-    }
-    { // last tile
-        write_stage ^= 1;
+
+        const int rs = k % K_STAGE;
         uint32_t RA[WARP_TILE_M][4];
         uint32_t RB[WARP_TILE_N][2];
-        for(int i = 0; i < WARP_TILE_M; i ++) {
-            ptx::ldmatrix_sync(RA[i], &tileA[write_stage][warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id % 16][(lane_id / 16) * 8]);
-        }
-        for(int j = 0; j < WARP_TILE_N; j ++) {
-            ptx::ldmatrix_trans_sync(RB[j], &tileB[write_stage][lane_id % 16][warp_n * WARP_TILE_N * MMA_N + j * MMA_N]);
-        } 
-        for(int i = 0; i < WARP_TILE_M; i ++) {
-            for(int j = 0; j < WARP_TILE_N; j ++) {
-                ptx::mma_sync_m16n8k16(RC[i][j], RA[i], RB[j]);
-            }
-        }
-    }
 
-    for(int i = 0; i < WARP_TILE_M; i ++) {
-        for(int j = 0; j < WARP_TILE_N; j ++) {
-            ld_st_32bit(&tileC[lane_id / 4][(lane_id % 4) * 2], &RC[i][j][0]);
-            ld_st_32bit(&tileC[lane_id / 4 + 8][(lane_id % 4) * 2], &RC[i][j][1]);
+        #pragma unroll
+        for(int i = 0; i < WARP_TILE_M; i ++) {
+            int row = warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id % 16;
+            int col = (lane_id / 16) * 8;
+            ptx::ldmatrix_sync(RA[i], &s_a[rs * BM * BK + row * BK + col]);
         }
+        #pragma unroll
+        for(int j = 0; j < WARP_TILE_N; j ++) {
+            int row = lane_id % 16;
+            int col = warp_n * WARP_TILE_N * MMA_N + j * MMA_N;
+            ptx::ldmatrix_trans_sync(RB[j], &s_b[rs * BK * BN + row * BN + col]);
+        }
+        #pragma unroll
+        for(int i = 0; i < WARP_TILE_M; i ++)
+            #pragma unroll
+                for(int j = 0; j < WARP_TILE_N; j ++)
+                    ptx::mma_sync_m16n8k16(RC[i][j], RA[i], RB[j]);
+
+        // prefetch tile (k + K_STAGE - 1) into buffer (k-1)%K_STAGE
+        int nk = k + K_STAGE - 1;
+        if(nk < K_NUM_TILES) {
+            int ws = nk % K_STAGE;
+            int a_gk = nk * BK + a_sm_k;
+            int b_gk = nk * BK + b_sm_k;
+            ptx::cp_async_cg<16>(&s_a[ws * BM * BK + a_sm_m * BK + a_sm_k], &A[a_gm_m * K + a_gk]);
+            ptx::cp_async_cg<16>(&s_b[ws * BK * BN + b_sm_k * BN + b_sm_n], &B[b_gk * N + b_gm_n]);
+        }
+        // commit even when nk is out of range -> empty group keeps wait_group accounting uniform
+        ptx::cp_async_commit_group();
     }
+   
+    // ------------------------------- epilogue -------------------------------
+    // all A/B ldmatrix reads are done -> safe to clobber the union with C
     __syncthreads();
-    for(int i = 0; i < WARP_TILE_M; i ++) {
-        for(int j = 0; j < WARP_TILE_N; j ++) {
-            int store_gmem_c_m = blockIdx.y * BM + warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id;
-            int store_gmem_c_n = blockIdx.x * BN + warp_n * WARP_TILE_N * MMA_N + j * MMA_N;
-            int store_gmem_c_addr = store_gmem_c_m * N + store_gmem_c_n;
-            if(lane_id < MMA_M) {
-                ld_st_128bit(&C[store_gmem_c_addr], &tileC[lane_id][0]);
-            }
+  
+    #pragma unroll
+    for (int i = 0; i < WARP_TILE_M; i++)
+        #pragma unroll
+        for (int j = 0; j < WARP_TILE_N; j++) {
+            int row = warp_m * WARP_TILE_M * MMA_M + i * MMA_M + lane_id / 4;
+            int col = warp_n * WARP_TILE_N * MMA_N + j * MMA_N + (lane_id % 4) * 2;
+            *reinterpret_cast<uint32_t *>(&s_c[row * BN + col])       = RC[i][j][0];
+            *reinterpret_cast<uint32_t *>(&s_c[(row + 8) * BN + col]) = RC[i][j][1];
         }
-    }       
+    __syncthreads();
+
+    // s_c[128][128] -> C, 128-bit vectorized & coalesced, independent of warp layout
+    for (int idx = tid; idx < (BM * BN) / 8; idx += blockDim.x) {
+        int row = (idx * 8) / BN;
+        int col = (idx * 8) % BN;
+        int gm  = by * BM + row;
+        int gn  = bx * BN + col;
+        *reinterpret_cast<uint4 *>(&C[gm * N + gn]) =
+            *reinterpret_cast<uint4 *>(&s_c[row * BN + col]);
+    }
     return;
 }
 void hgemm_mma_m16n8k16_ldmatrix(half *A, half *B, half *C, const int M, const int N, const int K) {
 
-    constexpr int MMA_M = 16;
-    constexpr int MMA_K = 8;
-    constexpr int MMA_N = 16;
-    constexpr int MMA_TILE_M = 4;
-    constexpr int MMA_TILE_N = 2;
-    constexpr int WARP_TILE_M = 2;
-    constexpr int WARP_TILE_N = 4;
-    dim3 block(256);
-    dim3 grid(div_ceil(N, MMA_N*MMA_TILE_N*WARP_TILE_N), div_ceil(M, MMA_TILE_M*MMA_M*WARP_TILE_M));
-    hgemm_mma_m16n8k16_ldmatrix_kernel<MMA_M, MMA_N, MMA_K, MMA_TILE_M, MMA_TILE_N, WARP_TILE_M, WARP_TILE_N><<<grid, block>>>(A, B, C, M, N, K);
+    constexpr int MMA_M = 16, MMA_K = 16, MMA_N = 8;
+    constexpr int MMA_TILE_M = 4, MMA_TILE_N = 2;
+    constexpr int WARP_TILE_M = 2, WARP_TILE_N = 4;
+    constexpr int K_STAGE = 4;
+
+    constexpr int BM = MMA_M * MMA_TILE_M * WARP_TILE_M; // 128
+    constexpr int BN = MMA_N * MMA_TILE_N * WARP_TILE_N; // 128
+    constexpr int BK = MMA_K;                            // 16
+
+    constexpr int ab_bytes = K_STAGE * (BM * BK + BK * BN) * (int)sizeof(half);
+    constexpr int c_bytes  = BM * BN * (int)sizeof(half);
+    constexpr int smem_bytes = ab_bytes > c_bytes ? ab_bytes : c_bytes; // 32 KB here
+
+    auto kernel = hgemm_mma_m16n8k16_ldmatrix_kernel<
+        MMA_M, MMA_N, MMA_K, MMA_TILE_M, MMA_TILE_N, WARP_TILE_M, WARP_TILE_N, K_STAGE>;
+    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+
+    dim3 block(16, 16);
+    dim3 grid(div_ceil(N, BN), div_ceil(M, BM));
+    kernel<<<grid, block, smem_bytes>>>(A, B, C, M, N, K);
     
     return;
 }
@@ -386,6 +397,7 @@ int main() {
     const int opt = 1;
     if(opt == 1) {
         tester.evaluate(hgemm_mma_m16n8k16_ldmatrix, "hgemm_mma_m16n16k16_ldmatrix_kernel");
+    }
     }
     return 0;
 }
