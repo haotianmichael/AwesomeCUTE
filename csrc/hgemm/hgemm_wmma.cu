@@ -100,8 +100,6 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
     const int load_gmem_a_m = blockIdx.y * BM + load_smem_a_m;
     const int load_gmem_b_n = blockIdx.x * BN + load_smem_b_n;
 
-    if(load_gmem_a_m >= M || load_gmem_b_n >= N) return;
-
     __shared__ half tileA[2][BM][BK], tileB[2][BK][BN];
     wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, half> C_frag[WARP_TILE_M][WARP_TILE_N];
     for(int i = 0; i < WARP_TILE_M; i ++) {
@@ -110,7 +108,7 @@ __global__ void hgemm_wmma_m16n16k16_kernel_opt(half *A, half *B, half *C, const
         }
     }
     wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> A_frag[WARP_TILE_M];
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> B_frag[WARP_TILE_N];
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> B_frag[WARP_TILE_N];
     unsigned int write_stage = 0;
     {
         /*

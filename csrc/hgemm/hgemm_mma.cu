@@ -53,12 +53,10 @@ __global__ void hgemm_mma_m16n8k16_ldmatrix_kernel(
     const int a_gm_m = by * BM + a_sm_m;
     const int b_gm_n = bx * BN + b_sm_n;
 
-    if(a_gm_m >= M || b_gm_n >= N) return;
-
     // --- shared mem: A/B ring buffer; C aliases the SAME storage (epilogue reuse) ---
     extern __shared__ half smem[]; 
     half *s_a = smem;                       // [K_STAGE][BM][BK]
-    half *s_b = smem + K_STAGE * BM + BK;   // [K_STAGE][BK][BN]
+    half *s_b = smem + K_STAGE * BM * BK;   // [K_STAGE][BK][BN]
     half *s_c = smem;                       // [BM][BN], only after the K loop
 
     uint32_t RC[WARP_TILE_M][WARP_TILE_N][2] = {}; 
@@ -144,7 +142,7 @@ void hgemm_mma_m16n8k16_ldmatrix(half *A, half *B, half *C, const int M, const i
 
     constexpr int MMA_M = 16, MMA_K = 16, MMA_N = 8;
     constexpr int MMA_TILE_M = 4, MMA_TILE_N = 2;
-    constexpr int WARP_TILE_M = 2, WARP_TILE_N = 4;
+    constexpr int WARP_TILE_M = 2, WARP_TILE_N = 8;
     constexpr int K_STAGE = 4;
 
     constexpr int BM = MMA_M * MMA_TILE_M * WARP_TILE_M; // 128
@@ -398,6 +396,6 @@ int main() {
     if(opt == 1) {
         tester.evaluate(hgemm_mma_m16n8k16_ldmatrix, "hgemm_mma_m16n16k16_ldmatrix_kernel");
     }
-    }
+    
     return 0;
 }
