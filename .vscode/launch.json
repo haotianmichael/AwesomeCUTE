@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug volta_tensorop_gemm",
+            "type": "cuda-gdb",
+            "request": "launch",
+            "program": "${workspaceFolder}/third-party/cutlass/build/examples/cute/tutorial/cute_tutorial_sgemm_sm70",
+            //"program": "${workspaceFolder}/third-party/cutlass/build/examples/07_volta_tensorop_gemm/07_volta_tensorop_gemm",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,                     
+            "preLaunchTask": "build-volta-example",
+            "miDebuggerPath": "/usr/local/cuda-12.8/bin/cuda-gdb",  
+            "environment": []
+        }
+    ]
+}

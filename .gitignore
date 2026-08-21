@@ -4,5 +4,4 @@ CMakeFiles/
 *.cmake
 !CMakeLists.txt
 .cache/
-.vscode/
 docs/*

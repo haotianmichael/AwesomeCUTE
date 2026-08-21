@@ -21,9 +21,9 @@ struct KernelSpec{
     using ComputeTypeB = ComputeTypeB_;
     using ComputeTypeC = ComputeTypeC_;
 
-    static constexpr int kTiledM = kTiledM_;
-    static constexpr int kTiledN = kTiledN_;
-    static constexpr int kTiledK = kTiledK_;
+    static constexpr int kTileM = kTiledM_;
+    static constexpr int kTileN = kTiledN_;
+    static constexpr int kTileK = kTiledK_;
 
     using MMA_op = SM80_16x8x8_F32BF16BF16F32_TN;
     using MMA_traits = MMA_Traits<MMA_op>;
@@ -53,10 +53,10 @@ struct KernelSpec{
     using CopyC_atom = Copy_Atom<Copy_op, ComputeTypeC>;
     using Copy0_atom = Copy_Atom<Copy_op, OutType>;
     
-    using TileCopyA = decltype(make_tiled_copy_A(CopyA_atom{}, TiledMMA{}));
-    using TileCopyB = decltype(make_tiled_copy_B(CopyB_atom{}, TiledMMA{}));
-    using TileCopyC = decltype(make_tiled_copy_C(CopyC_atom{}, TiledMMA{}));
-    using TileCopy0 = decltype(make_tiled_copy_C(Copy0_atom{}, TiledMMA{}));
+    using TiledCopyA = decltype(make_tiled_copy_A(CopyA_atom{}, TiledMMA{}));
+    using TiledCopyB = decltype(make_tiled_copy_B(CopyB_atom{}, TiledMMA{}));
+    using TiledCopyC = decltype(make_tiled_copy_C(CopyC_atom{}, TiledMMA{}));
+    using TiledCopy0 = decltype(make_tiled_copy_C(Copy0_atom{}, TiledMMA{}));
 
     static constexpr int kThreadNum = size(TiledMMA{});
     static constexpr int kShmSize = 0;
