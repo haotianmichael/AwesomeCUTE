@@ -9,11 +9,8 @@
 
 # Compile-Debug
 > rm -rf build
-> cmake -B build -S . \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DCUTLASS_EXAMPLES=ON \
-  -DCUTLASS_NVCC_ARCHS=70 \
+> cmake -B build -S . -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCUTLASS_ENABLE_EXAMPLES=ON \
+  -DCUTLASS_NVCC_ARCHS=120a \
   -DCUTLASS_ENABLE_TESTS=OFF \
-  -DCUTLASS_UNITY_BUILD=ON \
-  -DCMAKE_CUDA_FLAGS_DEBUG="-g -G -O0 -lineinfo -maxrregcount=128 -Xptxas -v -Xcompiler -fno-inline -Xcompiler -fno-omit-frame-pointer -Xcompiler -ggdb" \
-  -DCMAKE_CXX_FLAGS_DEBUG="-O0 -ggdb -fno-inline -fno-omit-frame-pointer"
+  -DCMAKE_CUDA_FLAGS="-lineinfo -Xptxas -v"
