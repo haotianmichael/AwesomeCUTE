@@ -7,7 +7,7 @@
             "command": "make",
             "args": [
                 "-C",
-                "${workspaceFolder}/third-party/cutlass/build/examples/cute/tutorial/",
+                "${workspaceFolder}/third-party/cutlass/build/examples/87_blackwell_geforce_gemm_blockwise",
                 //"${workspaceFolder}/third-party/cutlass/build/examples/07_volta_tensorop_gemm"
             ],
             "group": {
