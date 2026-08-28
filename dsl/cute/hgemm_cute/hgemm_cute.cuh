@@ -112,7 +112,7 @@ namespace spec{
 }
 
 template<typename Spec, bool IsGemm, bool IsCvtPrecision>
-__global__ void block_copy(void *__restrict__ Cptr, const void *__restrict__ Aptr, const void *__restrict__ Bptr, int m, int n, int k, void *__restrict__ Outptr) {
+__global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Aptr, const void *__restrict__ Bptr, int m, int n, int k, void *__restrict__ Outptr) {
 
     using namespace cute;
 
@@ -238,7 +238,7 @@ __global__ void block_copy(void *__restrict__ Cptr, const void *__restrict__ Apt
         constexpr int kMmaTileK = Spec::kMmaTileK;
 
         constexpr int NTilesM = kBlockM / kMmaTileM; // 4
-        constexpr int NTilesN = kBlockN / kMmatileN; // 4
+        constexpr int NTilesN = kBlockN / kMmaTileN; // 4
         constexpr int NTilesK = kBlockK / kMmaTileK; // 2
 
     #pragma unroll

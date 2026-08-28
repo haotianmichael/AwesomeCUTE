@@ -12,7 +12,7 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = ".".join(map(str, torch.cuda.get_device_cap
 
 # Load CUDA extension module
 lib = load(
-    name="tiled_copy",
+    name="hgemm_cute",
     sources=sources,
     extra_cuda_cflags=[
         "-O3",
@@ -93,9 +93,9 @@ def compare_matrix(kernel_output: torch.Tensor, torch_output: torch.Tensor):
 
 # ---------------- bf16 = bf16 * bf16 + fp32 ----------------
 
-Ms = [32]
-Ns = [32]
-Ks = [16]
+Ms = [128]
+Ns = [128]
+Ks = [64]
 exps = [(m, n, k) for m in Ms for n in Ns for k in Ks]
 
 torch.cuda.manual_seed_all(9527)
@@ -109,13 +109,13 @@ for exp in exps:
     c = torch.randn(M, N, device="cuda", dtype=torch.float32)
 
     # Case 1: MM
-    kernel_output = lib.tiled_copy_bf16_bf16_bf16_fp32(a, b, None)
+    kernel_output = lib.hgemm_cute(a, b, None)
     if not ENABLE_PROF:
         torch_output = torch.matmul(a.float(), b.T.float()).bfloat16()
         compare_matrix(kernel_output, torch_output)
 
     # Case 2: MMA
-    kernel_output = lib.tiled_copy_bf16_bf16_bf16_fp32(a, b, c)
+    kernel_output = lib.hgemm_cute(a, b, c)
     if not ENABLE_PROF:
         torch_output = torch.addmm(c, a.float(), b.T.float()).bfloat16()
         compare_matrix(kernel_output, torch_output)

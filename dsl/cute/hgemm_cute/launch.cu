@@ -59,7 +59,7 @@ template <int M,
           typename ComputeTypeA,
           typename ComputeTypeB,
           typename ComputeTypeC = OutType>
-torch::Tensor run_block_copy(const torch::Tensor a, const torch::Tensor b, std::optional<torch::Tensor> _c) {
+torch::Tensor run_hgemm(const torch::Tensor a, const torch::Tensor b, std::optional<torch::Tensor> _c) {
 
   at::cuda::CUDAGuard device_guard{a.get_device()};
   auto stream = at::cuda::getCurrentCUDAStream().stream();
@@ -123,10 +123,10 @@ torch::Tensor run_block_copy(const torch::Tensor a, const torch::Tensor b, std::
   BOOL_SWITCH(is_gemm, IsGemm, [&] {
     cudaEventRecord(start, stream);
     if (shm_size >= 48 * 1024) {
-      cudaFuncSetAttribute(block_copy<Spec, IsGemm, IsCvtPrecision>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+      cudaFuncSetAttribute(hgemm_cute<Spec, IsGemm, IsCvtPrecision>, cudaFuncAttributeMaxDynamicSharedMemorySize,
                            shm_size);
     }
-    block_copy<Spec, IsGemm, IsCvtPrecision>
+    hgemm_cute<Spec, IsGemm, IsCvtPrecision>
         <<<grid, block, shm_size, stream>>>(c.data_ptr(), a.data_ptr(), b.data_ptr(), M, N, K, out_ptr);
     cudaEventRecord(stop, stream);
   });
@@ -153,7 +153,7 @@ torch::Tensor run_block_copy(const torch::Tensor a, const torch::Tensor b, std::
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("block_copy_bf16_bf16_bf16_fp32",
-        &(run_block_copy<128, 128, 64, cute::bfloat16_t, cute::bfloat16_t, cute::bfloat16_t, float>),
-        "Run a mixed-precision half 16x8x8 MMA operation.");
+  m.def("hgemm_cute",
+        &(run_hgemm<128, 128, 64, cute::bfloat16_t, cute::bfloat16_t, cute::bfloat16_t, float>),
+        "Run a mixed-precision half 16x8x8 MMA operation using cute");
 }
