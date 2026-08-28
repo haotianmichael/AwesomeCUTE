@@ -2,6 +2,9 @@
 #include <cuda_runtime.h>
 #include <cute/tensor.hpp>
 
+#if (defined (__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
+#define CP_ASYNC_ENABLED
+#endif
 
 namespace spec{
     using namespace cute;
@@ -23,10 +26,24 @@ namespace spec{
         static constexpr int kBlockN = kBlockN_;
         static constexpr int kBlockK = kBlockK_;
 
-        using MMA_op = SM80_16x8x16_F32BF16BF16F32_TN;
+        using MMA_op = std::conditional_t<
+          std::is_same_v<ComputeTypeA, cute::bfloat16_t> && std::is_same_v<ComputeTypeB, cute::bfloat16_t> &&
+              std::is_same_v<ComputeTypeC, float>,
+          SM80_16x8x16_F32BF16BF16F32_TN,
+          std::conditional_t<
+              std::is_same_v<ComputeTypeA, cute::half_t> && std::is_same_v<ComputeTypeB, cute::half_t> &&
+                  std::is_same_v<ComputeTypeC, cute::half_t>,
+              SM80_16x8x16_F16F16F16F16_TN,
+              std::conditional_t<std::is_same_v<ComputeTypeA, cute::half_t> &&
+                                     std::is_same_v<ComputeTypeB, cute::half_t> && std::is_same_v<ComputeTypeC, float>,
+                             SM80_16x8x16_F32F16F16F32_TN,
+                             void>>>;
+
+        static_assert(!std::is_same_v<MMA_op, void>, "Unsupported MMA op!");
+
         using MMA_traits = MMA_Traits<MMA_op>;
         using MMA_atom = MMA_Atom<MMA_traits>;
-        using MMA_shape = MMA_traits::Shape_MNK;
+        using MMA_shape = typename MMA_traits::Shape_MNK;
 
         static constexpr int kMmaThrExpandM = 2;
         static constexpr int kMmaThrExpandN = 4;
@@ -47,17 +64,30 @@ namespace spec{
         using TiledMMA = decltype(make_tiled_mma(MMA_op{}, MMAThrLayout{}, MMATileLayout{}));
 
         using Copy_G2S_op = SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>;
-        using Copy_S2R_op = AutoVectorizingCopy;
+
+        // Note: ldmatrix only support 16-bit data type(or below)
+        using Copy_S2R_op_A = std::conditional_t<sizeof(ComputeTypeA) == 2, SM75_U32x4_LDSM_N, AutoVectorizingCopy>;
+        using Copy_S2R_op_B = std::conditional_t<sizeof(ComputeTypeB) == 2, SM75_U32x4_LDSM_N, AutoVectorizingCopy>;
+        // The C / O accumulator fragment has no K val-expand, so each thread only
+        // owns half the 32-bit packets of an A/B fragment. Use the x2 LDSM/STSM
+        // variant for C-side copies; A/B keep x4 because VAL_EXPAND_K=2 gives them
+        // enough vals/thread.
+        using Copy_S2R_op_C = std::conditional_t<sizeof(ComputeTypeC) == 2, SM75_U32x2_LDSM_N, AutoVectorizingCopy>;
 
         using CopyA_G2S_atom = Copy_Atom<Copy_G2S_op, ComputeTypeA>;
         using CopyB_G2S_atom = Copy_Atom<Copy_G2S_op, ComputeTypeB>;
         using CopyC_G2S_atom = Copy_Atom<Copy_G2S_op, ComputeTypeC>;
 
-        using CopyA_S2R_atom = Copy_Atom<Copy_S2R_op, ComputeTypeA>;
-        using CopyB_S2R_atom = Copy_Atom<Copy_S2R_op, ComputeTypeB>;
-        using CopyC_S2R_atom = Copy_Atom<Copy_S2R_op, ComputeTypeC>;
+        using CopyA_S2R_atom = Copy_Atom<Copy_S2R_op_A, ComputeTypeA>;
+        using CopyB_S2R_atom = Copy_Atom<Copy_S2R_op_B, ComputeTypeB>;
+        using CopyC_S2R_atom = Copy_Atom<Copy_S2R_op_C, ComputeTypeC>;
 
-        using Copy_R2S_op = AutoVectorizingCopy;
+    #if (defined (__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+        using Copy_R2S_op = SM90_U32x2_STSM_N;
+    #else
+        using Copy_R2S_op = AutoAutoVectorizingCopy;
+    #endif
+
         using Copy_S2G_op = AutoVectorizingCopy;
 
         using CopyC_R2S_atom = Copy_Atom<Copy_R2S_op, ComputeTypeC>;
@@ -78,6 +108,7 @@ namespace spec{
         using TiledCopyB_G2S = decltype(make_tiled_copy(CopyB_G2S_atom{}, 
                     make_layout(make_shape(Int<kThreadNum / kBlockK_Copy>{}, Int<kBlockK_Copy>{}), make_stride(Int<kBlockK_Copy>{}, Int<1>{})), 
                 make_layout(make_shape(Int<1>{}, Int<8>{}))));
+
         using TiledCopyC_G2S = decltype(make_tiled_copy(CopyC_G2S_atom{}, 
                     make_layout(make_shape(Int<kThreadNum / kBlockN_Copy>{}, Int<kBlockN_Copy>{}), make_stride(Int<kBlockN_Copy>{}, Int<1>{})),
                 make_layout(make_shape(Int<1>{}, Int<8>{}))));
@@ -96,11 +127,26 @@ namespace spec{
                     make_layout(make_shape(Int<kThreadNum / kBlockN_Copy>{}, Int<kBlockN_Copy>{}), make_stride(Int<kBlockN_Copy>{}, Int<1>{})),
                 make_layout(make_shape(Int<1>{}, Int<8>{})))); 
 
-        
-        using SmemLayoutA = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
+
+        using SmemLayoutAtomAB = decltype(composition(Swizzle<3, 3, 3>{},
+                                                make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockK)>{}),
+                                                            make_stride(Int<cute::min(64, kBlockK)>{}, Int<1>{}))));
+        using SmemLayoutAtomC = decltype(composition(Swizzle<3, 3, 3>{},
+                                               make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockN)>{}),
+                                                           make_stride(Int<cute::min(64, kBlockN)>{}, Int<1>{}))));
+        /*using SmemLayoutA = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
         using SmemLayoutB = decltype(make_layout(make_shape(Int<kBlockN>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
         using SmemLayoutC = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockN>{}), make_stride(Int<kBlockN>{}, Int<1>{})));
-        using SmemLayoutO = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockN>{}), make_stride(Int<kBlockN>{}, Int<1>{})));
+        using SmemLayoutO = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockN>{}), make_stride(Int<kBlockN>{}, Int<1>{})));*/
+
+        using SmemLayoutA =
+            decltype(tile_to_shape(SmemLayoutAtomAB{}, make_shape(Int<kBlockM>{}, Int<kBlockK>{}), Step<_1, _2>{}));
+         using SmemLayoutB =
+            decltype(tile_to_shape(SmemLayoutAtomAB{}, make_shape(Int<kBlockN>{}, Int<kBlockK>{}), Step<_1, _2>{}));
+         using SmemLayoutC =
+            decltype(tile_to_shape(SmemLayoutAtomC{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{}), Step<_1, _2>{}));
+         using SmemLayoutO =
+            decltype(tile_to_shape(SmemLayoutAtomC{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{}), Step<_1, _2>{}));
 
         static constexpr int kShmSizeA = cosize(SmemLayoutA{}) * sizeof(ComputeTypeA);
         static constexpr int kShmSizeB = cosize(SmemLayoutB{}) * sizeof(ComputeTypeB);
