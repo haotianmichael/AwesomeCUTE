@@ -63,6 +63,53 @@ namespace spec{
         using MMATileLayout = Tile<Int<kMmaTileM>, Int<kMmaTileN>, Int<kMmaTileK>>;
         using TiledMMA = decltype(make_tiled_mma(MMA_op{}, MMAThrLayout{}, MMATileLayout{}));
 
+      // Why AutoVectorizingCopy faults under copy_if (CUDA error 716, "misaligned
+      // address"):
+      //
+      //   `AutoVectorizingCopyWithAssumedAlignment<MaxBits>` inherits from
+      //   `UniversalCopy<uint_bit_t<MaxBits>>`, so `AutoVectorizingCopy` (=
+      //   `<128>`) is structurally a 128-bit atom applied to whatever element
+      //   type the tensor has.
+      //
+      //   In `cute/algorithm/copy.hpp`, the `copy()` overload for AutoVec does a
+      //   `recast<uint_bit_t<vec_bits>>` of src/dst BEFORE issuing the atom:
+      //
+      //       copy(AutoVec<N>, src, dst)
+      //         -> recast<uintN>(src/dst)        // fp16 -> uint128_t view
+      //         -> copy_if(true, src_v, dst_v)   // 1 atom call per iter
+      //
+      //   But `copy_if(Copy_Atom<AutoVec<N>, T>, pred, src, dst)` has NO matching
+      //   recast specialization. It falls through to the generic Copy_Atom
+      //   path that unrolls atom calls over the per-thread tile WITHOUT
+      //   recasting. With val (1, 8) of fp16 we get 8 atom calls at stride
+      //   1 fp16 (= 2 B), each invoking the 128-bit atom:
+      //
+      //       ld.global.nc.v2.u64 [base + 0]    aligned
+      //       ld.global.nc.v2.u64 [base + 2]    misaligned -> fault
+      //       ld.global.nc.v2.u64 [base + 4]    misaligned
+      //       ...
+      //       ld.global.nc.v2.u64 [base + 14]   misaligned
+      //
+      //   These loads also have NO @p in PTX: copy_if's `if (pred)` becomes one
+      //   coarse `setp + @p bra` gating the whole block. NVCC faithfully lowers
+      //   exactly what CUTLASS asked for; the broken stride is at the CUTLASS
+      //   layer, not at NVCC.
+      //
+      // Tracked upstream: NVIDIA/cutlass#2354 ("Missing copy_if implementation
+      // for AutoVectorizingCopyWithAssumedAlignment"). As of CUTLASS main the
+      // bug is still present -- no copy_if(AutoVec<N>, ...) specialization has
+      // been merged. The official workaround in
+      // cutlass/examples/cute/tutorial/tiled_copy_if.cu is to bake the width
+      // into the atom type explicitly:
+      //
+      //   using CopyOp = UniversalCopy<uint_byte_t<sizeof(T) * size(val_layout)>>;
+      //
+      // SM80_CP_ASYNC_CACHEGLOBAL<uint128_t> follows the same principle: its
+      // atom is 16 B intrinsically, so val (1, 8) collapses to one atom call per
+      // iter -> one aligned `cp.async.cg.shared.global [smem], [gmem], 16` per
+      // thread. It also drives the cp_async_fence / cp_async_wait pipeline
+      // (AutoVec is sync ld+st, the fences become no-ops with respect to data
+      // motion).
         using Copy_G2S_op = SM80_CP_ASYNC_CACHEGLOBAL<cute::uint128_t>;
 
         // Note: ldmatrix only support 16-bit data type(or below)
@@ -83,12 +130,14 @@ namespace spec{
         using CopyC_S2R_atom = Copy_Atom<Copy_S2R_op_C, ComputeTypeC>;
 
     #if (defined (__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+        // R2S writes a C-shaped fragment, so match the C-side x2 variant chosen
+        // above. SM90_U32x4_STSM_N would static_assert on too-few vals/thread.
         using Copy_R2S_op = SM90_U32x2_STSM_N;
     #else
-        using Copy_R2S_op = AutoAutoVectorizingCopy;
+        using Copy_R2S_op = AutoVectorizingCopy;
     #endif
 
-        using Copy_S2G_op = AutoVectorizingCopy;
+        using Copy_S2G_op = UniversalCopy<cute::uint128_t>;
 
         using CopyC_R2S_atom = Copy_Atom<Copy_R2S_op, ComputeTypeC>;
         using CopyO_R2S_atom = Copy_Atom<Copy_R2S_op, OutType>;
@@ -158,7 +207,7 @@ namespace spec{
 }
 
 template<typename Spec, bool IsGemm, bool IsCvtPrecision>
-__global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Aptr, const void *__restrict__ Bptr, int m, int n, int k, void *__restrict__ Outptr) {
+__global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Aptr, const void *__restrict__ Bptr, int m, int n, int k, void *__restrict__ Outptr) {
 
     using namespace cute;
 
@@ -187,53 +236,112 @@ __global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Apt
     uint8_t *Optr_smem = smem;
 
     int tid = threadIdx.x;
+    int bidx = blockIdx.x;
+    int bidy = blockIdx.y;
 
-    Tensor mA = make_tensor(make_gmem_ptr((ComputeTypeA*)Aptr), make_shape(m, k), make_stride(k, Int<1>{}));        
-    Tensor mB = make_tensor(make_gmem_ptr((ComputeTypeB*)Bptr), make_shape(n, k), make_stride(k, Int<1>{}));
-    Tensor mC = make_tensor(make_gmem_ptr((ComputeTypeC*)Cptr), make_shape(m, n), make_stride(n, Int<1>{}));
-    Tensor m0 = make_tensor(make_gmem_ptr((ComputeTypeC*)Outptr), make_shape(m, n), make_stride(n, Int<1>{}));
+    Tensor mA = make_tensor(make_gmem_ptr((ComputeTypeA*)Aptr), make_shape(m, k), make_stride(k, Int<1>{}));   // (M, K)       
+    Tensor mB = make_tensor(make_gmem_ptr((ComputeTypeB*)Bptr), make_shape(n, k), make_stride(k, Int<1>{}));  // (N, K)
+    Tensor mC = make_tensor(make_gmem_ptr((ComputeTypeC*)Cptr), make_shape(m, n), make_stride(n, Int<1>{}));  // (M, N)
+    Tensor m0 = make_tensor(make_gmem_ptr((OutType*)Outptr), make_shape(m, n), make_stride(n, Int<1>{}));  // (M, N)
 
     auto tiler = make_tile(Int<kBlockM>{}, Int<kBlockN>{}, Int<kBlockK>{});
-    auto coord = make_coord(0, 0, 0);  
+    auto coord = make_coord(bidy, bidx, _);  
 
-    Tensor gA = local_tile(mA, tiler, coord, Step<_1, X, _1>{});
-    Tensor gB = local_tile(mB, tiler, coord, Step<X, _1, _1>{}); 
-    Tensor gC = local_tile(mC, tiler, coord, Step<_1, _1, X>{});
-    Tensor g0 = local_tile(m0, tiler, coord, Step<_1, _1, X>{});
+    Tensor gA = local_tile(mA, tiler, coord, Step<_1, X, _1>{});   // (BLK_M, BLK_K, K_TILES)
+    Tensor gB = local_tile(mB, tiler, coord, Step<X, _1, _1>{});   // (BLK_N, BLK_K, K_TILES)
+    Tensor gC = local_tile(mC, tiler, coord, Step<_1, _1, X>{});   // (BLK_M, BLK_N)
+    Tensor g0 = local_tile(m0, tiler, coord, Step<_1, _1, X>{});  // (BLK_M, BLK_N)
 
-    Tensor sA = make_tensor(make_smem_ptr((ComputeTypeA*)Aptr_smem), SmemLayoutA{});
-    Tensor sB = make_tensor(make_smem_ptr((ComputeTypeB*)Bptr_smem), SmemLayoutB{});
-    Tensor sC = make_tensor(make_smem_ptr((ComputeTypeC*)Cptr_smem), SmemLayoutC{});
-    Tensor s0 = make_tensor(make_smem_ptr((OutType*)Optr_smem), SmemLayoutO{});
+    auto m_max_coord = m - size<0>(gA) * bidy; // M - BLK_M * m_coord
+    auto n_max_coord = n - size<0>(gB) * bidx;  // N - BLK_N * n_coord
+    auto k_residue = k - size<1>(gA) * size<2>(gA); // K - BLK_K * k_coord_max
+
+    // Shift tensor so residue_k is at origin (Can't read any k_coord < residue_k)
+    // This aligns the tensor with BLK_K for all but the 0th k_tile
+    gA = domain_offset(make_coord(0, k_residue, 0), gA);
+    gB = domain_offset(make_coord(0, k_residue, 0), gB);
+
+
+    Tensor sA = make_tensor(make_smem_ptr((ComputeTypeA*)Aptr_smem), SmemLayoutA{});  // (BLK_M, BLK_K)
+    Tensor sB = make_tensor(make_smem_ptr((ComputeTypeB*)Bptr_smem), SmemLayoutB{});  // (BLK_N, BLK_K)
+    Tensor sC = make_tensor(make_smem_ptr((ComputeTypeC*)Cptr_smem), SmemLayoutC{}); // (BLK_M, BLKN)
+    Tensor s0 = make_tensor(make_smem_ptr((OutType*)Optr_smem), SmemLayoutO{}); // (BLK_M, BLK_N)
 
     typename Spec::TiledMMA tiled_mma;
     ThrMMA thr_mma = tiled_mma.get_slice(tid);
 
-    Tensor tCgA = thr_mma.partition_A(gA);  // (MMA, MMA_M, MMA_K)
-    Tensor tCgB = thr_mma.partition_B(gB);
-    Tensor tCgC = thr_mma.partition_C(gC);
+    //Tensor tCgA = thr_mma.partition_A(gA);  // (MMA, MMA_M, MMA_K)
+    //Tensor tCgB = thr_mma.partition_B(gB);
+    //Tensor tCgC = thr_mma.partition_C(gC);
 
-    Tensor tCrA = thr_mma.partition_fragment_A(gA); // (MMA, MMA_M, MMA_K)
-    Tensor tCrB = thr_mma.partition_fragment_B(gB);
-    Tensor tCrC = thr_mma.partition_fragment_C(gC);
+    Tensor tCrA = thr_mma.partition_fragment_A(gA(_, _, 0)); // (MMA, MMA_M, MMA_K)
+    Tensor tCrB = thr_mma.partition_fragment_B(gB(_, _, 0)); // (MMA, MMA_N, MMA_K) 
+    Tensor tCrC = thr_mma.partition_fragment_C(gC); // (MMA, MMA_M, MMA_N)
 
     //--- Copy all global matrix Tile A/B/C to SMEM
     typename Spec::TiledCopyA_G2S g2s_tiled_copy_a;
     ThrCopy g2s_thr_copy_a = g2s_tiled_copy_a.get_slice(tid);
-    Tensor tAgA_g2s = g2s_thr_copy_a.partition_S(gA); // (CPY, CPY_M, CPY_K)
-    Tensor tAsA_g2s = g2s_thr_copy_a.partition_D(sA);
+    Tensor tAgA_g2s = g2s_thr_copy_a.partition_S(gA); // (ACPY, ACPY_M, ACPY_K, K_TILES)
+    Tensor tAsA_g2s = g2s_thr_copy_a.partition_D(sA); // (ACPY, ACPY_M, ACPY_K)
 
     typename Spec::TiledCopyB_G2S g2s_tiled_copy_b;
     ThrCopy g2s_thr_copy_b = g2s_tiled_copy_b.get_slice(tid);
-    Tensor tBgB_g2s = g2s_thr_copy_b.partition_S(gB); // (CPY, CPY_N, CPY_K)
-    Tensor tBsB_g2s = g2s_thr_copy_b.partition_D(sB);
+    Tensor tBgB_g2s = g2s_thr_copy_b.partition_S(gB); // (BCPY, BCPY_N, BCPY_K, K_TILES)
+    Tensor tBsB_g2s = g2s_thr_copy_b.partition_D(sB); // (BCPY, BCPY_N, BCPY_K)
 
 
     typename Spec::TiledCopyC_G2S g2s_tiled_copy_c;
     ThrCopy g2s_thr_copy_c = g2s_tiled_copy_c.get_slice(tid);
-    Tensor tCgC_g2s = g2s_thr_copy_c.partition_S(gC); // (CPY, CPY_M, CPY_N)
-    Tensor tCsC_g2s = g2s_thr_copy_c.partition_D(sC);
+    Tensor tCgC_g2s = g2s_thr_copy_c.partition_S(gC); // (CCPY, CCPY_M, CCPY_N)
+    Tensor tCsC_g2s = g2s_thr_copy_c.partition_D(sC); // (CCPY, CCPY_M, CCPY_N)
 
+    //
+    // PREDICATES
+    //
+
+    // Allocate predicate tensors
+    Tensor tApA_g2s = make_tensor<bool>(make_shape(size<1>(tAsA_g2s), size<2>(tAsA_g2s)), Stride<_1, _0>{});  // (ACPY_M, ACPY_K)
+    Tensor tBpB_g2s = make_tensor<bool>(make_shape(size<1>(tBsB_g2s), size<2>(tBsB_g2s)), Stride<_1, _0>{}); // (BCPY_N, BCPY_K)
+    Tensor tCpC_g2s = make_tensor<bool>(make_shape(size<1>(tCsC_g2s), size<2>(tCsC_g2s)), Stride<_1, Int<size<1>(tCsC_g2s)>>{});  // (CCPY_M, CCPY_N)
+
+    // Construct identity layout
+    Tensor cA = make_identity_tensor(make_shape(size<0>(sA), size<1>(sA)));  // (BLK_M, BLK_K) -> (blk_m, blk_k)
+    Tensor cB = make_identity_tensor(make_shape(size<0>(sB), size<1>(sB)));  // (BLK_N, BLK_K) -> (blk_n, blk_k)
+    Tensor cC = make_identity_tensor(make_shape(size<0>(sC), size<1>(sC)));  // (BLK_M, BLK_N) -> (blk_m, blk_n)
+
+    // Repeat the partitioning with identity layouts
+    Tensor tAcA_g2s = g2s_thr_copy_a.partition_S(cA);  // (ACPY, ACPY_M, ACPY_K) -> (blk_m, blk_k)
+    Tensor tBcB_g2s = g2s_thr_copy_b.partition_S(cB);  // (BCPY, BCPY_N, BCPY_K) -> (blk_n, blk_k)
+    Tensor tCcC_g2s = g2s_thr_copy_c.partition_S(cC);  // (CCPY, CCPY_M, CCPY_N) -> (blk_m, blk_n)
+
+    // Set predicates for m bounds
+#pragma unroll
+    for(int m = 0; m < size<0>(tApA_g2s); ++m) {
+        tApA_g2s(m, 0) = get<0>(tAcA_g2s(0, m, 0)) < m_max_coord;  // blk_m coord < residue_m
+    }
+    // Set predicates for n bounds
+#pragma unroll
+    for(int n = 0; n < size<0>(tBpB_g2s); ++n) {
+        tBpB_g2s(n, 0) = get<0>(tBcB_g2s(0, n, 0)) < n_max_coord;  // blk_n coord < residue_n
+    }
+    // Set predicates for (m, n) bounds
+#pragma unroll 
+    for(int m = 0; m < size<0>(tCpC_g2s); ++m) {
+#pragma unroll 
+        for(int n = 0; n < size<1>(tCpC_g2s); ++n) {
+            // blk_m coord < residue_m and blk_n < residue_n
+            tCpC_g2s(m, n) = elem_less(tCcC_g2s(0, m, n), make_coord(m_max_coord, n_max_coord));
+            // Equivalent to:
+            // tCpC_g2s(m,n) = (get<0>(tCcC_g2s(0,m,n)) < m_max_coord) && (get<1>(tCcC_g2s(0,m,n)) < n_max_coord);
+        }
+    }
+
+    //
+    // END PREDICATES
+    //
+
+
+    /*Naive Copy 
     copy(g2s_tiled_copy_a, tAgA_g2s, tAsA_g2s);
     copy(g2s_tiled_copy_b, tBgB_g2s, tBsB_g2s);
     if constexpr (!IsGemm) {
@@ -244,31 +352,93 @@ __global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Apt
         cp_async_fence();
         cp_async_wait<0>();
     #endif
-    __syncthreads();
+    __syncthreads();*/
     //--- Complete copy from GMEM to SMEM
 
     typename Spec::TiledCopyA_S2R s2r_tiled_copy_a;
     ThrCopy s2r_thr_copy_a = s2r_tiled_copy_a.get_slice(tid);
     Tensor tAsA_s2r = s2r_thr_copy_a.partition_S(sA);
-    Tensor tArA_s2r = s2r_thr_copy_a.partition_D(tCrA);
+    Tensor tArA_s2r = s2r_thr_copy_a.retile_D(tCrA);
 
     typename Spec::TiledCopyB_S2R s2r_tiled_copy_b;
     ThrCopy s2r_thr_copy_b = s2r_tiled_copy_b.get_slice(tid);
     Tensor tBsB_s2r = s2r_thr_copy_b.partition_S(sB);
-    Tensor tBrB_s2r = s2r_thr_copy_b.partition_D(tCrB);
+    Tensor tBrB_s2r = s2r_thr_copy_b.retile_D(tCrB);
 
 
     typename Spec::TiledCopyC_S2R s2r_tiled_copy_c;
     ThrCopy s2r_thr_copy_c = s2r_tiled_copy_c.get_slice(tid);
     Tensor tCsC_s2r = s2r_thr_copy_c.partition_S(sC);
-    Tensor tCrC_s2r = s2r_thr_copy_c.partition_D(tCrC);
+    Tensor tCrC_s2r = s2r_thr_copy_c.retile_D(tCrC);
+
+    // 
+    // MAINLOOP
+    //
 
     if constexpr (!IsGemm) {
-        clear(tCrC);
-    }else {
-        copy(s2r_tiled_copy_c, tCsC_s2r, tCrC_s2r);
+        // Clear the smem tiles to account for predicated off loads
+        clear(tCsC_g2s);
+        copy_if(g2s_tiled_copy_c, tCpC_g2s, tCgC_g2s, tCsC_g2s);
     }
 
+    int NTilesK = ceil_div(k, kBlockK);
+     // Zero the A/B smem ONCE before the K-loop (hoisted out of the mainloop).
+     // The predicated cp.async never writes masked-off slots, so they must read
+     // as 0. A single clear suffices: the M-boundary rows masked off by the
+     // M-only predicate are never written by any K-tile, and the ik=0 K-residue
+     // columns are overwritten by every later (full) K-tile.
+     //
+     // No sync between the clear and the cp.async: each thread's clear targets
+     // the same g2s partition slots that its cp.async then writes, so program
+     // order within a thread suffices. The __syncthreads() after cp_async_wait
+     // below publishes both the zeros and the cp.async data to the s2r readers.
+     clear(tAsA_g2s);
+     clear(tBsB_g2s);
+
+     for(int ik = 0; ik < NTilesK; ik ++) {
+        if(ik == 0) {
+#pragma unroll
+            for(int k = 0; k < size<2>(tAsA_g2s); k++) {
+                if (get<1>(tAcA_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gA shifted)
+                  copy_if(g2s_tiled_copy_a, tApA_g2s(_, k), tAgA_g2s(_, _, k, ik), tAsA_g2s(_, _, k));
+                }
+            }
+
+#pragma unroll
+            for(int k = 0; k < size<2>(tBsB_g2s); k++) {
+                if (get<1>(tBcB_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gB shifted)
+                    copy_if(g2s_tiled_copy_b, tBpB_g2s(_, k), tBgB_g2s(_, _, k, ik), tBsB_g2s(_, _, k));
+                }
+            }            
+        }else {
+            copy_if(g2s_tiled_copy_a, tApA_g2s, tAgA_g2s(_, _, _, ik), tAsA_g2s);
+            copy_if(g2s_tiled_copy_b, tBpB_g2s, tBgB_g2s(_, _, _, ik), tBsB_g2s);
+        }
+
+#if defined(CP_ASYNC_ENABLED)
+    cp_async_fence();
+    cp_async_wait<0>();
+#endif
+    __syncthreads();
+
+    if(ik == 0) {
+        if constexpr (IsGemm) {
+            clear(tCrC);
+        }else {
+            copy(s2r_tiled_copy_c, tCsC_s2r, tCrC_s2r);
+        }
+    }
+
+     copy(s2r_tiled_copy_a, tAsA_s2r, tArA_s2r);
+     copy(s2r_tiled_copy_b, tBsB_s2r, tBrB_s2r);
+
+     gemm(tiled_mma, tCrC, tCrA, tCrB, tCrC);
+
+     __syncthreads();
+
+    }
+
+    /*naive copy
     #if 1
         copy(s2r_tiled_copy_a, tAsA_s2r, tArA_s2r);
         copy(s2r_tiled_copy_b, tBsB_s2r, tBrB_s2r);
@@ -311,7 +481,8 @@ __global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Apt
         }
 
     #endif
-    __syncthreads();
+    __syncthreads();*/
+
 
     if constexpr (!IsCvtPrecision) {
         typename Spec::TiledCopyC_R2S r2s_tiled_copy_c;
@@ -326,7 +497,28 @@ __global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Apt
         Tensor s2g_thr_copy_c = s2g_tiled_copy_c.get_slice(tid);
         Tensor tCsC_s2g = s2g_thr_copy_c.partition_S(sC);
         Tensor tCgC_s2g = s2g_thr_copy_c.partition_D(gC);
-        copy(s2g_tiled_copy_c, tCsC_s2g, tCgC_s2g);
+        //
+        // PREDICATES
+        //
+
+        Tensor tCpC_s2g = make_tensor<bool>(make_shape(size<1>(tCgC_s2g), size<2>(tCgC_s2g)),
+                                        Stride<_1, Int<size<1>(tCgC_s2g)>>{}); // (CCPY_M, CCPY_N)
+        Tensor tCcC_s2g = s2g_thr_copy_c.partition_S(cC);                          // (CCPY,CCPY_M,CCPY_N) -> (blk_m,blk_n)
+
+#pragma unroll
+        for (int m = 0; m < size<0>(tCpC_s2g); ++m) {
+#pragma unroll
+            for (int n = 0; n < size<1>(tCpC_s2g); ++n) {
+                  tCpC_s2g(m, n) = elem_less(tCcC_s2g(0, m, n), make_coord(m_max_coord, n_max_coord));
+            }
+        }
+
+        //
+        // END PREDICATES
+        //
+
+        copy_if(s2g_tiled_copy_c, tCpC_s2g, tCsC_s2g, tCgC_s2g);
+        //copy(s2g_tiled_copy_c, tCsC_s2g, tCgC_s2g);
     }else {
 
         auto t = make_tensor_like<OutType>(tCrC);
@@ -344,6 +536,29 @@ __global__ void hgemm_cute(void *__restrict__ Cptr, const void *__restrict__ Apt
         ThrCopy s2g_thr_copy_o = s2g_tiled_copy_o.get_slice(tid);
         Tensor tOsO_s2g = s2g_thr_copy_o.partition_S(s0); // (CPY, CPY_M, CPY_N)
         Tensor tOgO_s2g = s2g_thr_copy_o.partition_D(g0); // (CPY, CPY_M, CPY_N)
-        copy(s2g_tiled_copy_o, tOsO_s2g, tOgO_s2g);
+
+        //
+        // PREDICATES
+        //
+
+        Tensor tOpO_s2g = make_tensor<bool>(make_shape(size<1>(tOgO_s2g), size<2>(tOgO_s2g)),
+                                            Stride<_1, Int<size<1>(tOgO_s2g)>>{}); // (OCPY_M, OCPY_N)
+        Tensor cO = make_identity_tensor(make_shape(size<0>(s0), size<1>(s0)));    // (BLK_N,BLK_K) -> (blk_n,blk_k)
+        Tensor tOcO_s2g = s2g_thr_copy_o.partition_S(cO);                          // (OCPY,OCPY_M,OCPY_N) -> (blk_m,blk_n)
+
+#pragma unroll
+        for (int m = 0; m < size<0>(tOpO_s2g); ++m) {
+#pragma unroll
+            for (int n = 0; n < size<1>(tOpO_s2g); ++n) {
+                tOpO_s2g(m, n) = elem_less(tOcO_s2g(0, m, n), make_coord(m_max_coord, n_max_coord));
+            }
+        }
+
+        //
+        // END PREDICATES
+        //
+
+        copy_if(s2g_tiled_copy_o, tOpO_s2g, tOsO_s2g, tOgO_s2g);
+        //copy(s2g_tiled_copy_o, tOsO_s2g, tOgO_s2g);
     }
 }
