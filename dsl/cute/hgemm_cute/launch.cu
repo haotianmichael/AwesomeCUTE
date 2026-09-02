@@ -1,6 +1,6 @@
 #include <torch/extension.h>
 #include <torch/types.h>
-#include "block_copy.cuh"
+#include "hgemm_cute.cuh"
 
 
 #define CHECK_TORCH_TENSOR_DTYPE(T, DTYPE)                                                                            \
@@ -52,9 +52,10 @@ template <typename ComputeTypeC, typename OutType> constexpr bool needs_precisio
   return !std::is_same_v<ComputeTypeC, OutType>;
 }
 
-template <int M,
-          int N,
-          int K,
+template <int kBlockM,
+          int kBlockN,
+          int kBlockK,
+          int G2S_Stages,
           typename OutType,
           typename ComputeTypeA,
           typename ComputeTypeB,
@@ -63,6 +64,10 @@ torch::Tensor run_hgemm(const torch::Tensor a, const torch::Tensor b, std::optio
 
   at::cuda::CUDAGuard device_guard{a.get_device()};
   auto stream = at::cuda::getCurrentCUDAStream().stream();
+
+  auto M = a.size(0);
+  auto N = b.size(0);
+  auto K = a.size(1);
 
   auto torch_compute_type_a = to_torch_scalar_type<ComputeTypeA>();
   auto torch_compute_type_b = to_torch_scalar_type<ComputeTypeB>();
@@ -99,11 +104,20 @@ torch::Tensor run_hgemm(const torch::Tensor a, const torch::Tensor b, std::optio
     CHECK_TORCH_TENSOR_SHAPE(out, M, N)
   }
 
-  using Spec = spec::KernelSpec<OutType, ComputeTypeA, ComputeTypeB, ComputeTypeC, M, N, K>;
+  using Spec = spec::KernelSpec<OutType, ComputeTypeA, ComputeTypeB, ComputeTypeC, kBlockM, kBlockN, kBlockK, G2S_Stages>;
 
   dim3 block = Spec::kThreadNum;
-  dim3 grid((N + Spec::kBlockN - 1) / Spec::kBlockN, (M + Spec::kBlockM - 1) / Spec::kBlockM);
-  int shm_size = Spec::kShmSize;
+  //dim3 grid((N + Spec::kBlockN - 1) / Spec::kBlockN, (M + Spec::kBlockM - 1) / Spec::kBlockM);
+  dim3 grid(cute::ceil_div(N, Spec::kBlockN), cute::ceil_div(M, Spec::kBlockM));
+
+  constexpr int kShmSizeA = Spec::kShmSizeA;
+  constexpr int kShmSizeB = Spec::kShmSizeB;
+  constexpr int kShmSizeC = Spec::kShmSizeC;
+  constexpr int kShmSizeO = Spec::kShmSizeO;
+
+  //int shm_size = Spec::kShmSize;
+  int shm_size = (is_gemm) ? ((IsCvtPrecision) ? (cute::max(kShmSizeA + kShmSizeB, kShmSizeO)) : (cute::max(kShmSizeA + kShmSizeB, kShmSizeC))) 
+                           : ((IsCvtPrecision) ? (cute::max(kShmSizeA + kShmSizeB + kShmSizeC, kShmSizeO)) : (kShmSizeA + kShmSizeB + kShmSizeC)); 
 
   printf("Block Size: (%d, %d, %d) | Grid Size: (%d, %d, %d) | Shared Memory Size: %d Bytes\n", block.x, block.y,
          block.z, grid.x, grid.y, grid.z, shm_size);
@@ -153,7 +167,13 @@ torch::Tensor run_hgemm(const torch::Tensor a, const torch::Tensor b, std::optio
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("hgemm_cute",
-        &(run_hgemm<128, 128, 64, cute::bfloat16_t, cute::bfloat16_t, cute::bfloat16_t, float>),
-        "Run a mixed-precision half 16x8x8 MMA operation using cute");
+  m.def("hgemm_cute_fp16_fp16_fp16_fp16",
+        &(run_hgemm<128, 128, 64, 5, cute::half_t, cute::half_t, cute::half_t>),
+        "Run a mixed-precision half 16x8x8 MMA operation using cute.");
+  m.def("hgemm_cute_fp16_fp16_fp16_fp32",
+        &(run_hgemm<128, 128, 64, 5, cute::half_t, cute::half_t, cute::half_t, float>),
+        "Run a mixed-precision half 16x8x8 MMA operation using cute.");
+  m.def("hgemm_cute_bf16_bf16_bf16_fp32",
+        &(run_hgemm<128, 128, 64, 5, cute::bfloat16_t, cute::bfloat16_t, cute::bfloat16_t, float>),
+        "Run a mixed-precisioin half 16x8x8 MMA operation using cute.");
 }

@@ -47,6 +47,7 @@ lib = load(
 
 
 ENABLE_PROF = os.environ.get("ENABLE_PROF", False)
+ENABLE_MMA = os.environ.get("ENABLE_MMA", False)
 PRINT_LENGTH = 100
 
 
@@ -90,14 +91,40 @@ def compare_matrix(kernel_output: torch.Tensor, torch_output: torch.Tensor):
         )
     )
 
-
-# ---------------- bf16 = bf16 * bf16 + fp32 ----------------
-
-Ms = [128]
-Ns = [128]
-Ks = [64]
+# Note: N and K must be multiples of 8 to remain compatible with the 128-bit vectorized copy op.
+Ms = [16, 64, 128, 192, 256, 1024, 4096, 8192]
+Ns = [16, 64, 128, 192, 256, 1024, 4096, 8192]
+Ks = [16, 64, 128, 192, 256, 1024, 4096, 8192]
 exps = [(m, n, k) for m in Ms for n in Ns for k in Ks]
 
+# ---------------- fp16 = fp16 * fp16 + fp32 ----------------
+torch.cuda.manual_seed_all(9527)
+
+for exp in exps:
+    M, N, K = exp
+    print(f" M={M}, N={N}, K={K} ".center(PRINT_LENGTH, "-"))
+
+    a = torch.randn(M, K, device="cuda", dtype=torch.float16)
+    b = torch.randn(N, K, device="cuda", dtype=torch.float16)
+    c = torch.randn(M, N, device="cuda", dtype=torch.float)
+
+    # Case 1: MM
+    _ = lib.hgemm_cute_fp16_fp16_fp16_fp32(a, b, None)
+    kernel_output = lib.hgemm_cute_fp16_fp16_fp16_fp32(a, b, None)
+    if not ENABLE_PROF:
+        # For fp16 input, `torch.matmul` use fp32 as the accumulator precision
+        torch_output = torch.matmul(a, b.T)
+        compare_matrix(kernel_output, torch_output)
+
+    # Case 2: MMA
+    if ENABLE_MMA:
+        kernel_output = lib.hgemm_cute_fp16_fp16_fp16_fp32(a, b, c.clone())
+        if not ENABLE_PROF:
+            torch_output = torch.addmm(c, a.float(), b.T.float()).half()
+            compare_matrix(kernel_output, torch_output)
+
+
+# ---------------- bf16 = bf16 * bf16 + fp32 ----------------
 torch.cuda.manual_seed_all(9527)
 
 for exp in exps:
@@ -109,16 +136,17 @@ for exp in exps:
     c = torch.randn(M, N, device="cuda", dtype=torch.float32)
 
     # Case 1: MM
-    kernel_output = lib.hgemm_cute(a, b, None)
+    kernel_output = lib.hgemm_cute_bf16_bf16_bf16_fp32(a, b, None)
     if not ENABLE_PROF:
         torch_output = torch.matmul(a.float(), b.T.float()).bfloat16()
         compare_matrix(kernel_output, torch_output)
 
     # Case 2: MMA
-    kernel_output = lib.hgemm_cute(a, b, c)
-    if not ENABLE_PROF:
-        torch_output = torch.addmm(c, a.float(), b.T.float()).bfloat16()
-        compare_matrix(kernel_output, torch_output)
+    if ENABLE_MMA:
+        kernel_output = lib.hgemm_cute_bf16_bf16_bf16_fp32(a, b, c.clone())
+        if not ENABLE_PROF:
+            torch_output = torch.addmm(c, a.float(), b.T.float()).bfloat16()
+            compare_matrix(kernel_output, torch_output)
 
 
 print(f" Summary: {num_succeed} Succeed, {num_failed} Failed ".center(PRINT_LENGTH, "-"))

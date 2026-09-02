@@ -13,9 +13,10 @@ namespace spec{
              typename ComputeTypeA_,
              typename ComputeTypeB_,
              typename ComputeTypeC_,
-             int kBlockM_ = 128,
-             int kBlockN_ = 128,
-             int kBlockK_ = 64>
+             int kBlockM_,
+             int kBlockN_,
+             int kBlockK_,
+             int G2S_Stages_ = 3>
     struct KernelSpec{
         using OutType = OutType_;
         using ComputeTypeA = ComputeTypeA_;
@@ -25,6 +26,9 @@ namespace spec{
         static constexpr int kBlockM = kBlockM_;
         static constexpr int kBlockN = kBlockN_;
         static constexpr int kBlockK = kBlockK_;
+
+        static constexpr int G2S_Stages = G2S_Stages_;
+        static_assert(G2S_Stages >= 2, "G2S_Stages should not be less than 2.");
 
         using MMA_op = std::conditional_t<
           std::is_same_v<ComputeTypeA, cute::bfloat16_t> && std::is_same_v<ComputeTypeB, cute::bfloat16_t> &&
@@ -170,39 +174,45 @@ namespace spec{
         using TiledCopyO_R2S = decltype(make_tiled_copy_C(CopyO_R2S_atom{}, TiledMMA{}));
 
         using TiledCopyC_S2G = decltype(make_tiled_copy(CopyC_S2G_atom{}, 
-                    make_layout(make_shape(Int<kThreadNum / kBlockK_Copy>{}, Int<kBlockK_Copy>{}), make_stride(Int<kBlockK_Copy>{}, Int<1>{})), 
+                    make_layout(make_shape(Int<kThreadNum / kBlockN_Copy>{}, Int<kBlockN_Copy>{}), make_stride(Int<kBlockN_Copy>{}, Int<1>{})), 
                 make_layout(make_shape(Int<1>{}, Int<8>{}))));
         using TiledCopyO_S2G = decltype(make_tiled_copy(CopyO_S2G_atom{}, 
                     make_layout(make_shape(Int<kThreadNum / kBlockN_Copy>{}, Int<kBlockN_Copy>{}), make_stride(Int<kBlockN_Copy>{}, Int<1>{})),
                 make_layout(make_shape(Int<1>{}, Int<8>{})))); 
 
 
-        using SmemLayoutAtomAB = decltype(composition(Swizzle<3, 3, 3>{},
+        using SmemLayoutAtomA = decltype(composition(Swizzle<3, 3, 3>{},
                                                 make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockK)>{}),
                                                             make_stride(Int<cute::min(64, kBlockK)>{}, Int<1>{}))));
+        using SmemLayoutAtomB = decltype(composition(Swizzle<3, 3, 3>{},
+                                               make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockK)>{}),
+                                                           make_stride(Int<cute::min(64, kBlockK)>{}, Int<1>{}))));
         using SmemLayoutAtomC = decltype(composition(Swizzle<3, 3, 3>{},
                                                make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockN)>{}),
                                                            make_stride(Int<cute::min(64, kBlockN)>{}, Int<1>{}))));
-        /*using SmemLayoutA = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
+        using SmemLayoutAtomO = decltype(composition(Swizzle<3, 3, 3>{},
+                                               make_layout(make_shape(Int<8>{}, Int<cute::min(64, kBlockN)>{}),
+                                                           make_stride(Int<cute::min(64, kBlockN)>{}, Int<1>{}))));
+                                                           /*using SmemLayoutA = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
         using SmemLayoutB = decltype(make_layout(make_shape(Int<kBlockN>{}, Int<kBlockK>{}), make_stride(Int<kBlockK>{}, Int<1>{})));
         using SmemLayoutC = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockN>{}), make_stride(Int<kBlockN>{}, Int<1>{})));
         using SmemLayoutO = decltype(make_layout(make_shape(Int<kBlockM>{}, Int<kBlockN>{}), make_stride(Int<kBlockN>{}, Int<1>{})));*/
 
         using SmemLayoutA =
-            decltype(tile_to_shape(SmemLayoutAtomAB{}, make_shape(Int<kBlockM>{}, Int<kBlockK>{}), Step<_1, _2>{}));
+            decltype(tile_to_shape(SmemLayoutAtomA{}, make_shape(Int<kBlockM>{}, Int<kBlockK>{}, Int<G2S_Stages>{})));
          using SmemLayoutB =
-            decltype(tile_to_shape(SmemLayoutAtomAB{}, make_shape(Int<kBlockN>{}, Int<kBlockK>{}), Step<_1, _2>{}));
+            decltype(tile_to_shape(SmemLayoutAtomB{}, make_shape(Int<kBlockN>{}, Int<kBlockK>{}, Int<G2S_Stages>{})));
          using SmemLayoutC =
-            decltype(tile_to_shape(SmemLayoutAtomC{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{}), Step<_1, _2>{}));
+            decltype(tile_to_shape(SmemLayoutAtomC{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{})));
          using SmemLayoutO =
-            decltype(tile_to_shape(SmemLayoutAtomC{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{}), Step<_1, _2>{}));
+            decltype(tile_to_shape(SmemLayoutAtomO{}, make_shape(Int<kBlockM>{}, Int<kBlockN>{})));
 
         static constexpr int kShmSizeA = cosize(SmemLayoutA{}) * sizeof(ComputeTypeA);
         static constexpr int kShmSizeB = cosize(SmemLayoutB{}) * sizeof(ComputeTypeB);
         static constexpr int kShmSizeC = cosize(SmemLayoutC{}) * sizeof(ComputeTypeC);
         static constexpr int kShmSizeO = cosize(SmemLayoutO{}) * sizeof(OutType);
 
-        static constexpr int kShmSize = cute::max( kShmSizeA + kShmSizeB + kShmSizeC, kShmSizeO);
+        //static constexpr int kShmSize = cute::max( kShmSizeA + kShmSizeB + kShmSizeC, kShmSizeO);
     };
 }
 
@@ -227,12 +237,17 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
     constexpr int kBlockK = Spec::kBlockK;
     constexpr int kShmSizeA = Spec::kShmSizeA;
     constexpr int kShmSizeB = Spec::kShmSizeB;
+    constexpr int G2S_Stages = Spec::G2S_Stages;
 
     extern __shared__ __align__(1024) uint8_t smem[];
 
     uint8_t *Aptr_smem = smem;
     uint8_t *Bptr_smem = smem + kShmSizeA;
-    uint8_t *Cptr_smem = smem + kShmSizeA + kShmSizeB;
+    uint8_t *Cptr_smem;
+    if constexpr (!IsGemm)
+        Cptr_smem = smem + kShmSizeA + kShmSizeB;
+    else 
+        Cptr_smem = smem;
     uint8_t *Optr_smem = smem;
 
     int tid = threadIdx.x;
@@ -262,8 +277,8 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
     gB = domain_offset(make_coord(0, k_residue, 0), gB);
 
 
-    Tensor sA = make_tensor(make_smem_ptr((ComputeTypeA*)Aptr_smem), SmemLayoutA{});  // (BLK_M, BLK_K)
-    Tensor sB = make_tensor(make_smem_ptr((ComputeTypeB*)Bptr_smem), SmemLayoutB{});  // (BLK_N, BLK_K)
+    Tensor sA = make_tensor(make_smem_ptr((ComputeTypeA*)Aptr_smem), SmemLayoutA{});  // (BLK_M, BLK_K, G2S_PIPE)
+    Tensor sB = make_tensor(make_smem_ptr((ComputeTypeB*)Bptr_smem), SmemLayoutB{});  // (BLK_N, BLK_K, G2S_PIPE)
     Tensor sC = make_tensor(make_smem_ptr((ComputeTypeC*)Cptr_smem), SmemLayoutC{}); // (BLK_M, BLKN)
     Tensor s0 = make_tensor(make_smem_ptr((OutType*)Optr_smem), SmemLayoutO{}); // (BLK_M, BLK_N)
 
@@ -282,13 +297,12 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
     typename Spec::TiledCopyA_G2S g2s_tiled_copy_a;
     ThrCopy g2s_thr_copy_a = g2s_tiled_copy_a.get_slice(tid);
     Tensor tAgA_g2s = g2s_thr_copy_a.partition_S(gA); // (ACPY, ACPY_M, ACPY_K, K_TILES)
-    Tensor tAsA_g2s = g2s_thr_copy_a.partition_D(sA); // (ACPY, ACPY_M, ACPY_K)
+    Tensor tAsA_g2s = g2s_thr_copy_a.partition_D(sA); // (ACPY, ACPY_M, ACPY_K, G2S_PIPE)
 
     typename Spec::TiledCopyB_G2S g2s_tiled_copy_b;
     ThrCopy g2s_thr_copy_b = g2s_tiled_copy_b.get_slice(tid);
     Tensor tBgB_g2s = g2s_thr_copy_b.partition_S(gB); // (BCPY, BCPY_N, BCPY_K, K_TILES)
-    Tensor tBsB_g2s = g2s_thr_copy_b.partition_D(sB); // (BCPY, BCPY_N, BCPY_K)
-
+    Tensor tBsB_g2s = g2s_thr_copy_b.partition_D(sB); // (BCPY, BCPY_N, BCPY_K, G2S_PIPE)
 
     typename Spec::TiledCopyC_G2S g2s_tiled_copy_c;
     ThrCopy g2s_thr_copy_c = g2s_tiled_copy_c.get_slice(tid);
@@ -372,7 +386,7 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
     Tensor tCrC_s2r = s2r_thr_copy_c.retile_D(tCrC);
 
     // 
-    // MAINLOOP
+    // Prefetch
     //
 
     if constexpr (!IsGemm) {
@@ -395,47 +409,81 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
      clear(tAsA_g2s);
      clear(tBsB_g2s);
 
-     for(int ik = 0; ik < NTilesK; ik ++) {
-        if(ik == 0) {
 #pragma unroll
-            for(int k = 0; k < size<2>(tAsA_g2s); k++) {
-                if (get<1>(tAcA_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gA shifted)
-                  copy_if(g2s_tiled_copy_a, tApA_g2s(_, k), tAgA_g2s(_, _, k, ik), tAsA_g2s(_, _, k));
-                }
-            }
-
-#pragma unroll
-            for(int k = 0; k < size<2>(tBsB_g2s); k++) {
-                if (get<1>(tBcB_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gB shifted)
-                    copy_if(g2s_tiled_copy_b, tBpB_g2s(_, k), tBgB_g2s(_, _, k, ik), tBsB_g2s(_, _, k));
-                }
-            }            
-        }else {
-            copy_if(g2s_tiled_copy_a, tApA_g2s, tAgA_g2s(_, _, _, ik), tAsA_g2s);
-            copy_if(g2s_tiled_copy_b, tBpB_g2s, tBgB_g2s(_, _, _, ik), tBsB_g2s);
-        }
-
-#if defined(CP_ASYNC_ENABLED)
-    cp_async_fence();
-    cp_async_wait<0>();
-#endif
-    __syncthreads();
-
-    if(ik == 0) {
-        if constexpr (IsGemm) {
-            clear(tCrC);
-        }else {
-            copy(s2r_tiled_copy_c, tCsC_s2r, tCrC_s2r);
-        }
+    for (int k = 0; k < size<2>(tAsA_g2s); ++k) {
+      if (get<1>(tAcA_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gA shifted)
+        copy_if(g2s_tiled_copy_a, tApA_g2s(_, k), tAgA_g2s(_, _, k, 0), tAsA_g2s(_, _, k, 0));
+      }
     }
 
-     copy(s2r_tiled_copy_a, tAsA_s2r, tArA_s2r);
-     copy(s2r_tiled_copy_b, tBsB_s2r, tBrB_s2r);
+#pragma unroll
+    for (int k = 0; k < size<2>(tBsB_g2s); ++k) {
+      if (get<1>(tBcB_g2s(0, 0, k)) >= -k_residue) { // blk_k coord < residue_k (gB shifted)
+        copy_if(g2s_tiled_copy_b, tBpB_g2s(_, k), tBgB_g2s(_, _, k, 0), tBsB_g2s(_, _, k, 0));
+      }
+    }
 
-     gemm(tiled_mma, tCrC, tCrA, tCrB, tCrC);
+    cp_async_fence();
 
-     __syncthreads();
+#pragma unroll
+    for (int ik = 1; ik < G2S_Stages - 1; ++ik) {
+      // Set all predicates to false if we are going to overshoot bounds
+      if (ik == NTilesK) {
+        clear(tApA_g2s);
+        clear(tBpB_g2s);
+      }
 
+      copy_if(g2s_tiled_copy_a, tApA_g2s, tAgA_g2s(_, _, _, ik), tAsA_g2s(_, _, _, ik));
+      copy_if(g2s_tiled_copy_b, tBpB_g2s, tBgB_g2s(_, _, _, ik), tBsB_g2s(_, _, _, ik));
+
+      cp_async_fence();
+    }
+
+    cp_async_wait<G2S_Stages - 2>();
+    __syncthreads();
+
+    //
+    // MAINLOOP
+    //
+
+    int g2s_gmem_pipe = G2S_Stages - 1;
+    int g2s_smem_pipe = G2S_Stages - 1;
+    int s2r_smem_pipe = 0;
+
+    for(int ik = 0; ik < NTilesK; ik ++) {
+
+        copy(s2r_tiled_copy_a, tAsA_s2r(_, _, _, s2r_smem_pipe), tArA_s2r);
+        copy(s2r_tiled_copy_b, tBsB_s2r(_, _, _, s2r_smem_pipe), tBrB_s2r);
+
+        {
+            // Set all predicates to false if we are going to overshoot bounds
+            if(g2s_gmem_pipe == NTilesK) {
+                clear(tApA_g2s);
+                clear(tBpB_g2s);
+            }
+
+            copy_if(g2s_tiled_copy_a, tApA_g2s, tAgA_g2s(_, _, _, g2s_gmem_pipe), tAsA_g2s(_, _, _, g2s_smem_pipe));
+            copy_if(g2s_tiled_copy_b, tBpB_g2s, tBgB_g2s(_, _, _, g2s_gmem_pipe), tBsB_g2s(_, _, _, g2s_smem_pipe));
+      
+            cp_async_fence();
+            ++g2s_gmem_pipe;
+            ++g2s_smem_pipe;
+            g2s_smem_pipe = (g2s_smem_pipe == G2S_Stages) ? 0 : g2s_smem_pipe;
+        }
+        if (ik == 0) {
+            if constexpr (IsGemm) {
+                clear(tCrC); // Set the accumulators to zero
+            } else {
+                copy(s2r_tiled_copy_c, tCsC_s2r, tCrC_s2r);
+            }
+        }
+
+        gemm(tiled_mma, tCrC, tCrA, tCrB, tCrC);
+
+        cp_async_wait<G2S_Stages - 2>();
+        __syncthreads();
+        ++s2r_smem_pipe;
+        s2r_smem_pipe = (s2r_smem_pipe == G2S_Stages) ? 0 : s2r_smem_pipe;
     }
 
     /*naive copy
@@ -483,6 +531,12 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
     #endif
     __syncthreads();*/
 
+    cp_async_wait<0>();
+    __syncthreads();
+
+    //
+    // EPILOGUE
+    //
 
     if constexpr (!IsCvtPrecision) {
         typename Spec::TiledCopyC_R2S r2s_tiled_copy_c;
@@ -494,7 +548,7 @@ __global__ __launch_bounds__(Spec::kThreadNum) void hgemm_cute(void *__restrict_
         __syncthreads();
 
         typename Spec::TiledCopyC_S2G s2g_tiled_copy_c;
-        Tensor s2g_thr_copy_c = s2g_tiled_copy_c.get_slice(tid);
+        ThrCopy s2g_thr_copy_c = s2g_tiled_copy_c.get_slice(tid);
         Tensor tCsC_s2g = s2g_thr_copy_c.partition_S(sC);
         Tensor tCgC_s2g = s2g_thr_copy_c.partition_D(gC);
         //
